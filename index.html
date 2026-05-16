@@ -367,6 +367,9 @@ function lockApp(){pinInput='';updateDots();document.getElementById('app').style
 const SB_URL='https://siuezdyzwrtqwdqexkye.supabase.co';
 const SB_KEY='sb_publishable_EhPCNb6sqqP2DhZRAIworQ_MVt_Dekl';
 let sbClient=null;
+var syncTimer=null;
+var syncInterval=null;
+var viewWeek=1;
 
 function initSupabase(){
   try{
@@ -470,7 +473,6 @@ function showSyncIndicator(status){
 }
 
 // Auto-sync every 30 seconds
-let syncInterval=null;
 function startAutoSync(){
   if(navigator.onLine){
     syncFromCloud();
@@ -922,10 +924,10 @@ function renderMetaList(metas,containerId){
         <div style="flex:1">
           <div class="meta-title" style="color:${cat.color}">${cat.label}</div>
           <div class="meta-sub">${done}/${total} · ${cat.summary}</div>
-          <div style="background:var(--b2);height:4px;border-radius:2px;margin-top:8px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${cat.color};border-radius:2px;transition:width .5s"></div></div>
+          <div style="background:var(--b2);height:4px;border-radius:2px;margin-top:8px;overflow:hidden"><div class="meta-bar-fill" style="height:100%;width:${pct}%;background:${cat.color};border-radius:2px;transition:width .5s"></div></div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-left:12px">
-          <div class="pr" style="width:44px;height:44px"><svg width="44" height="44"><circle class="track" cx="22" cy="22" r="${r}" stroke-width="3.5"/><circle class="fill" cx="22" cy="22" r="${r}" stroke-width="3.5" stroke="${cat.color}" stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/></svg><div class="lbl"><span style="font-size:10px;font-weight:800">${pct}%</span></div></div>
+          <div class="pr" style="width:44px;height:44px"><svg width="44" height="44"><circle class="track" cx="22" cy="22" r="${r}" stroke-width="3.5"/><circle class="fill meta-ring-fill" cx="22" cy="22" r="${r}" stroke-width="3.5" stroke="${cat.color}" stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/></svg><div class="lbl"><span class="meta-pct" style="font-size:10px;font-weight:800">${pct}%</span></div></div>
           <button class="meta-expand" onclick="toggleMI('mi_${cat.id}',this)">VER</button>
         </div>
       </div>
@@ -938,7 +940,35 @@ function renderMetaList(metas,containerId){
 function renderMetas(){renderMetaList(METAS_6M,'metasContent')}
 function renderExtra(){renderMetaList(METAS_EXTRA,'extraContent')}
 function toggleMI(id,btn){const el=document.getElementById(id);const open=el.classList.toggle('open');btn.textContent=open?'CERRAR':'VER'}
-function toggleMeta(id,i,el){const k=`${id}_${i}`;ST.metaChecked[k]=!ST.metaChecked[k];el.classList.toggle('done',ST.metaChecked[k]);sv('mc',ST.metaChecked);debounceSync();}
+function toggleMeta(id,i,el){
+  var k=id+'_'+i;
+  ST.metaChecked[k]=!ST.metaChecked[k];
+  el.classList.toggle('done',ST.metaChecked[k]);
+  sv('mc',ST.metaChecked);
+  debounceSync();
+  // Update progress bar, counter and ring in real time
+  var allMetas=METAS_6M.concat(METAS_EXTRA);
+  var cat=null;
+  for(var m=0;m<allMetas.length;m++){if(allMetas[m].id===id){cat=allMetas[m];break;}}
+  if(!cat)return;
+  var done=cat.items.filter(function(_,j){return ST.metaChecked[id+'_'+j];}).length;
+  var total=cat.items.length;
+  var pct=Math.round(done/total*100);
+  // Update sub text
+  var header=el.closest('.meta-main');
+  if(!header)return;
+  var sub=header.querySelector('.meta-sub');
+  if(sub)sub.textContent=done+'/'+total+' · '+cat.summary;
+  // Update progress bar fill
+  var bar=header.querySelector('.meta-bar-fill');
+  if(bar)bar.style.width=pct+'%';
+  // Update ring
+  var ring=header.querySelector('.meta-ring-fill');
+  if(ring){var r=18,circ=2*Math.PI*r,off=circ-(pct/100)*circ;ring.style.strokeDashoffset=off;}
+  // Update pct text
+  var pctEl=header.querySelector('.meta-pct');
+  if(pctEl)pctEl.textContent=pct+'%';
+}
 
 // ══ FINANZAS ══
 function renderFin(){
@@ -1147,8 +1177,6 @@ function addIdAttr(){var id=ld('identity',ID_DEFAULT);var opts=id.sections.map(f
 function addIdSection(){var id=ld('identity',ID_DEFAULT);var t=prompt('Nombre:','');if(t){id.sections.push({title:t,color:'var(--gold)',attrs:[]});sv('identity',id);renderIdentity()}}
 
 // ══ HISTORIAL — navegación semanas pasadas y futuras ══
-var viewWeek=ST.currentWeek;
-
 function renderHistorial(c){
   var vw=viewWeek;
   var cw=ST.currentWeek;
