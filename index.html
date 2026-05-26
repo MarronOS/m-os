@@ -439,6 +439,7 @@ async function syncToCloud(){
     const data={
       id:'marron',
       hab_checked:ST.habChecked,
+      hab_date:today(),
       meta_checked:ST.metaChecked,
       streak:ST.streak,
       train_checked:ST.trainChecked,
@@ -466,7 +467,13 @@ async function syncFromCloud(){
     const {data,error}=await sbClient.from('mos_state').select('*').eq('id','marron').single();
     if(error||!data)return;
     // Merge cloud into local - cloud wins if newer
-    if(data.hab_checked){ST.habChecked=data.hab_checked;sv('hc_'+today(),data.hab_checked);}
+    if(data.hab_checked){
+      // Merge: keep whichever has more checks for today
+      var localCount=0;var cloudCount=0;
+      Object.keys(ST.habChecked).forEach(function(k){if(ST.habChecked[k])localCount++;});
+      Object.keys(data.hab_checked).forEach(function(k){if(data.hab_checked[k])cloudCount++;});
+      if(cloudCount>=localCount){ST.habChecked=data.hab_checked;sv('hc_'+today(),data.hab_checked);}
+    }
     if(data.meta_checked){ST.metaChecked=data.meta_checked;sv('mc',data.meta_checked);}
     if(data.streak){ST.streak=data.streak;sv('streak',data.streak);}
     if(data.train_checked){ST.trainChecked=data.train_checked;sv('tc',data.train_checked);}
@@ -825,8 +832,26 @@ let ST={
 
 // ══ INIT ══
 function initApp(){
-  const saved=ld('lastDate','');
-  if(saved!==today()){sv('lastDate',today());ST.habChecked={};sv('hc_'+today(),{})}
+  var saved=ld('lastDate','');
+  if(saved!==today()){
+    // New day — reset habits
+    sv('lastDate',today());
+    ST.habChecked={};
+    sv('hc_'+today(),{});
+  } else {
+    // Same day — restore from localStorage
+    var restored=ld('hc_'+today(),{});
+    // Also check backup key
+    var backup=ld('hc_latest',null);
+    if(backup&&backup.date===today()){
+      var backupCount=0;var restoredCount=0;
+      Object.keys(backup.data||{}).forEach(function(k){if(backup.data[k])backupCount++;});
+      Object.keys(restored).forEach(function(k){if(restored[k])restoredCount++;});
+      if(backupCount>restoredCount)restored=backup.data;
+    }
+    ST.habChecked=restored;
+    sv('hc_'+today(),ST.habChecked);
+  }
   initDate();renderHabits();updateDashRing();updateStreak();renderDash();
   requestPushPermission();setInterval(buildReminderCard,30*60*1000);initSupabase();startAutoSync();
   updatePendCount();
@@ -913,8 +938,16 @@ function rHL(id,items,pfx){
     return `<div class="ci ${d?'done':''}" onclick="toggleHabit('${k}',this)"><div class="cb"></div><div class="cl">${it}</div></div>`;
   }).join('');
 }
-function toggleHabit(k,el){ST.habChecked[k]=!ST.habChecked[k];el.classList.toggle('done',ST.habChecked[k]);sv('hc_'+today(),ST.habChecked);updateStreak();updateDashRing();buildReminderCard();renderAlerts();debounceSync();logHabitsToCloud();}
-function resetHabits(){if(!confirm('¿Reiniciar?'))return;ST.habChecked={};sv('hc_'+today(),{});renderHabits();updateDashRing();buildReminderCard();renderAlerts()}
+function toggleHabit(k,el){
+  ST.habChecked[k]=!ST.habChecked[k];
+  el.classList.toggle('done',ST.habChecked[k]);
+  // Save to multiple localStorage keys for redundancy
+  sv('hc_'+today(),ST.habChecked);
+  sv('hc_latest',{date:today(),data:ST.habChecked});
+  updateStreak();updateDashRing();buildReminderCard();renderAlerts();
+  debounceSync();logHabitsToCloud();
+}
+function resetHabits(){if(!confirm('¿Reiniciar todos los hábitos del día?'))return;ST.habChecked={};sv('hc_'+today(),{});sv('hc_latest',{date:today(),data:{}});renderHabits();updateDashRing();buildReminderCard();renderAlerts();debounceSync();}
 function updateStreak(){
   const tot=HAB.priority.length,done=HAB.priority.filter((_,i)=>ST.habChecked[`pri_${i}`]).length;
   if(done===tot){const s=ST.streak;if(s.lastDate!==today()){const y=new Date();y.setDate(y.getDate()-1);s.count=s.lastDate===y.toISOString().slice(0,10)?s.count+1:1;s.lastDate=today();sv('streak',s)}}
