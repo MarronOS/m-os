@@ -474,7 +474,7 @@ async function syncFromCloud(){
     if(data.ex_data){ST.exData=data.ex_data;sv('exData',data.ex_data);}
     if(data.milli_checked){ST.milliChecked=data.milli_checked;sv('millc',data.milli_checked);}
     if(data.fin_notes!==null){ST.finNotes=data.fin_notes;sv('finn',data.fin_notes);}
-    if(data.pendientes){sv('pendientes',data.pendientes);}
+    if(data.pendientes&&data.pendientes.length>0){sv('pendientes',data.pendientes);}else{var localPend=ld('pendientes',[]);if(localPend.length>0){/* keep local, will sync up next cycle */}}
     if(data.nota&&Object.keys(data.nota).length>0){ST.nota=data.nota;sv('nota',data.nota);}
     if(data.identity_data&&Object.keys(data.identity_data).length>0){sv('identity',data.identity_data);}
     if(data.current_week){ST.currentWeek=data.current_week;sv('cw',data.current_week);}
@@ -531,7 +531,7 @@ function showSyncIndicator(status){
 // Auto-sync every 30 seconds
 function startAutoSync(){
   if(navigator.onLine){
-    syncFromCloud();
+    syncToCloud().then(function(){syncFromCloud();});
   } else {
     var el=document.getElementById('syncIndicator');
     if(el){el.textContent='☁ offline';el.style.color='var(--mu)';}
