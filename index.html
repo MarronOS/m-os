@@ -245,6 +245,7 @@ textarea.inp{resize:none;line-height:1.6}
   </div>
   <div id="reminderBox"></div>
   <div id="alertBox"></div>
+  <div id="dashDayStatus"></div>
   <div class="sl">Pendientes próximos</div>
   <div id="pendingBox"></div>
   <div class="sl">Progreso de metas</div>
@@ -259,6 +260,7 @@ textarea.inp{resize:none;line-height:1.6}
   <div class="card" id="habPriList"></div>
   <div class="sl">Generales</div>
   <div class="card" id="habGenList"></div>
+  <div id="dayStatus"></div>
   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
     <button class="btn bts btg" onclick="resetHabits()">Reiniciar día</button>
     <button class="btn bts btg" onclick="goTo('stats',null);setTimeout(function(){showHabHistory();},100)">Ver historial →</button>
@@ -448,6 +450,7 @@ async function syncToCloud(){
       milli_checked:ST.milliChecked,
       fin_notes:ST.finNotes,
       pendientes:loadPendientes(),
+      saved_days:getSavedDays(),
       nota:ST.nota,
       identity_data:ld('identity',ID_DEFAULT),
       current_week:ST.currentWeek,
@@ -481,7 +484,13 @@ async function syncFromCloud(){
     if(data.ex_data){ST.exData=data.ex_data;sv('exData',data.ex_data);}
     if(data.milli_checked){ST.milliChecked=data.milli_checked;sv('millc',data.milli_checked);}
     if(data.fin_notes!==null){ST.finNotes=data.fin_notes;sv('finn',data.fin_notes);}
-    if(data.pendientes&&data.pendientes.length>0){sv('pendientes',data.pendientes);}else{var localPend=ld('pendientes',[]);if(localPend.length>0){/* keep local, will sync up next cycle */}}
+    if(data.pendientes&&data.pendientes.length>0){sv('pendientes',data.pendientes);}else{var localPend=ld('pendientes',[]);if(localPend.length>0){}}
+    if(data.saved_days&&Object.keys(data.saved_days).length>0){
+      var localSD=getSavedDays();var cloudSD=data.saved_days;
+      // Merge: cloud wins for past days, local wins for today
+      Object.keys(cloudSD).forEach(function(dk){if(dk!==today()||!localSD[dk]){localSD[dk]=cloudSD[dk];}});
+      sv('saved_days',localSD);
+    }
     if(data.nota&&Object.keys(data.nota).length>0){ST.nota=data.nota;sv('nota',data.nota);}
     if(data.identity_data&&Object.keys(data.identity_data).length>0){sv('identity',data.identity_data);}
     if(data.current_week){ST.currentWeek=data.current_week;sv('cw',data.current_week);}
@@ -839,20 +848,29 @@ function initApp(){
     ST.habChecked={};
     sv('hc_'+today(),{});
   } else {
-    // Same day — restore from localStorage
+    // Same day — restore from best source
     var restored=ld('hc_'+today(),{});
-    // Also check backup key
+    // Check backup key
     var backup=ld('hc_latest',null);
     if(backup&&backup.date===today()){
-      var backupCount=0;var restoredCount=0;
-      Object.keys(backup.data||{}).forEach(function(k){if(backup.data[k])backupCount++;});
-      Object.keys(restored).forEach(function(k){if(restored[k])restoredCount++;});
-      if(backupCount>restoredCount)restored=backup.data;
+      var bc=0;var rc=0;
+      Object.keys(backup.data||{}).forEach(function(k){if(backup.data[k])bc++;});
+      Object.keys(restored).forEach(function(k){if(restored[k])rc++;});
+      if(bc>rc)restored=backup.data;
+    }
+    // Check saved day (strongest source)
+    var savedDays=getSavedDays();
+    if(savedDays[today()]){
+      var sd=savedDays[today()];
+      var sc=0;var rsc=0;
+      Object.keys(sd.hab_checked||{}).forEach(function(k){if(sd.hab_checked[k])sc++;});
+      Object.keys(restored).forEach(function(k){if(restored[k])rsc++;});
+      if(sc>rsc)restored=sd.hab_checked;
     }
     ST.habChecked=restored;
     sv('hc_'+today(),ST.habChecked);
   }
-  initDate();renderHabits();updateDashRing();updateStreak();renderDash();
+  initDate();renderHabits();updateDashRing();updateStreak();renderDash();updateDayStatus();setInterval(checkMidnightReset,60000);
   requestPushPermission();setInterval(buildReminderCard,30*60*1000);initSupabase();startAutoSync();
   updatePendCount();
   var pi=document.getElementById('pendInput');if(pi)pi.addEventListener('keydown',function(e){if(e.key==='Enter')addPendiente();});
@@ -941,13 +959,11 @@ function rHL(id,items,pfx){
 function toggleHabit(k,el){
   ST.habChecked[k]=!ST.habChecked[k];
   el.classList.toggle('done',ST.habChecked[k]);
-  // Save to multiple localStorage keys for redundancy
-  sv('hc_'+today(),ST.habChecked);
-  sv('hc_latest',{date:today(),data:ST.habChecked});
+  autoSaveDay();
   updateStreak();updateDashRing();buildReminderCard();renderAlerts();
-  debounceSync();logHabitsToCloud();
+  debounceSync();
 }
-function resetHabits(){if(!confirm('¿Reiniciar todos los hábitos del día?'))return;ST.habChecked={};sv('hc_'+today(),{});sv('hc_latest',{date:today(),data:{}});renderHabits();updateDashRing();buildReminderCard();renderAlerts();debounceSync();}
+function resetHabits(){if(!confirm('¿Reiniciar todos los hábitos del día?'))return;ST.habChecked={};sv('hc_'+today(),{});sv('hc_latest',{date:today(),data:{}});autoSaveDay();renderHabits();updateDashRing();buildReminderCard();renderAlerts();debounceSync();}
 function updateStreak(){
   const tot=HAB.priority.length,done=HAB.priority.filter((_,i)=>ST.habChecked[`pri_${i}`]).length;
   if(done===tot){const s=ST.streak;if(s.lastDate!==today()){const y=new Date();y.setDate(y.getDate()-1);s.count=s.lastDate===y.toISOString().slice(0,10)?s.count+1:1;s.lastDate=today();sv('streak',s)}}
@@ -1598,15 +1614,21 @@ async function renderStats(){
 
   var today30=new Date();
   var totalPri=HAB.priority.length;
+  var savedDays=getSavedDays();
   for(var d=29;d>=0;d--){
     var dd=new Date(today30);dd.setDate(dd.getDate()-d);
     var dk=dd.toISOString().slice(0,10);
-    var dayLog=habLog.find(function(l){return l.date===dk;});
     var donePri=0;
-    if(dayLog&&dayLog.hab_checked){
-      for(var i=0;i<totalPri;i++){if(dayLog.hab_checked['pri_'+i])donePri++;}
-    } else if(dk===today()){
-      for(var i2=0;i2<totalPri;i2++){if(ST.habChecked['pri_'+i2])donePri++;}
+    // Priority: saved_days > cloud log > current session
+    if(savedDays[dk]){
+      donePri=savedDays[dk].pri_done||0;
+    } else {
+      var dayLog=habLog.find(function(l){return l.date===dk;});
+      if(dayLog&&dayLog.hab_checked){
+        for(var i=0;i<totalPri;i++){if(dayLog.hab_checked['pri_'+i])donePri++;}
+      } else if(dk===today()){
+        for(var i2=0;i2<totalPri;i2++){if(ST.habChecked['pri_'+i2])donePri++;}
+      }
     }
     var pct=Math.round(donePri/totalPri*100);
     var cell=document.createElement('div');
@@ -1735,11 +1757,21 @@ async function showHabHistory(){
     }catch(e){console.error(e);}
   }
 
-  // Also add today from local
+  // Merge saved_days into habLog
+  var savedDaysH=getSavedDays();
   var todayKey=today();
+  Object.keys(savedDaysH).forEach(function(dk){
+    var existing=habLog.find(function(l){return l.date===dk;});
+    if(!existing){
+      habLog.push({date:dk,hab_checked:savedDaysH[dk].hab_checked});
+    }
+  });
+  // Add today from local if not already present
   if(!habLog.find(function(l){return l.date===todayKey;})){
     habLog.unshift({date:todayKey,hab_checked:ST.habChecked});
   }
+  // Sort by date descending
+  habLog.sort(function(a,b){return b.date.localeCompare(a.date);});
 
   var frag=document.createDocumentFragment();
   var title=document.createElement('div');
@@ -2083,6 +2115,132 @@ function updatePendCount(){
   var active=list.filter(function(x){return !x.done;}).length;
   var el=document.getElementById('pendCount');
   if(el)el.textContent=active+' activo'+(active!==1?'s':'');
+}
+
+
+// ══ DAY STATUS — auto-save and status display ══
+function getSavedDays(){return ld('saved_days',{});}
+
+function autoSaveDay(){
+  var days=getSavedDays();
+  var td=today();
+  var priDone=0;var priTotal=HAB.priority.length;
+  var genDone=0;var genTotal=HAB.general.length;
+  for(var i=0;i<priTotal;i++){if(ST.habChecked['pri_'+i])priDone++;}
+  for(var i2=0;i2<genTotal;i2++){if(ST.habChecked['gen_'+i2])genDone++;}
+
+  days[td]={
+    date:td,
+    hab_checked:JSON.parse(JSON.stringify(ST.habChecked)),
+    pri_done:priDone,
+    pri_total:priTotal,
+    gen_done:genDone,
+    gen_total:genTotal,
+    pct:Math.round(priDone/priTotal*100),
+    saved_at:new Date().toISOString()
+  };
+
+  sv('saved_days',days);
+  sv('hc_'+td,ST.habChecked);
+  sv('hc_latest',{date:td,data:ST.habChecked});
+  logHabitsToCloud();
+
+  // Sync to cloud
+  if(sbClient){
+    try{
+      sbClient.from('mos_habits_log').upsert({
+        date:td,
+        hab_checked:days[td].hab_checked,
+        pri_done:priDone,
+        pri_total:priTotal,
+        gen_done:genDone,
+        gen_total:genTotal,
+        pct:days[td].pct,
+        saved_at:days[td].saved_at
+      },{onConflict:'date'});
+    }catch(e){}
+  }
+
+  updateDayStatus();
+}
+
+function updateDayStatus(){
+  var td=today();
+  var days=getSavedDays();
+  var d=days[td];
+  var priDone=0;var priTotal=HAB.priority.length;
+  var genDone=0;var genTotal=HAB.general.length;
+
+  if(d){
+    priDone=d.pri_done;genDone=d.gen_done;
+  } else {
+    for(var i=0;i<priTotal;i++){if(ST.habChecked['pri_'+i])priDone++;}
+    for(var i2=0;i2<genTotal;i2++){if(ST.habChecked['gen_'+i2])genDone++;}
+  }
+
+  var pct=Math.round(priDone/priTotal*100);
+  var now=new Date();
+  var h=now.getHours();var m=now.getMinutes();
+  var timeStr=(h<10?'0':'')+h+':'+(m<10?'0':'')+m;
+
+  var statusColor=pct===100?'var(--teal)':pct>=50?'var(--gold)':'var(--mu)';
+  var bgColor=pct===100?'rgba(29,158,117,0.08)':pct>=50?'rgba(201,169,110,0.06)':'rgba(0,0,0,0.1)';
+  var borderColor=pct===100?'rgba(29,158,117,0.25)':pct>=50?'rgba(201,169,110,0.2)':'var(--b)';
+  var icon=pct===100?'✓':pct>=50?'◐':'○';
+
+  var html='<div style="background:'+bgColor+';border:0.5px solid '+borderColor+';border-radius:var(--rs);padding:10px 12px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between">'
+    +'<div style="display:flex;align-items:center;gap:9px">'
+    +'<span style="font-size:14px;color:'+statusColor+'">'+icon+'</span>'
+    +'<div><div style="font-size:10px;font-weight:700;color:var(--w)">'+td+'</div>'
+    +'<div style="font-size:9px;color:var(--mu);margin-top:1px">'+priDone+'/'+priTotal+' prioridad · '+genDone+'/'+genTotal+' generales</div></div>'
+    +'</div>'
+    +'<div style="text-align:right"><div style="font-size:16px;font-weight:800;color:'+statusColor+'">'+pct+'%</div>'
+    +'<div style="font-size:8px;color:var(--mu)">guardado '+timeStr+'</div></div>'
+    +'</div>';
+
+  var el1=document.getElementById('dayStatus');
+  var el2=document.getElementById('dashDayStatus');
+  if(el1)el1.innerHTML=html;
+  if(el2)el2.innerHTML=html;
+}
+
+// Check for midnight reset
+function checkMidnightReset(){
+  var now=new Date();
+  var h=now.getHours();var m=now.getMinutes();
+  if(h===0&&m<=5){
+    var yesterday=new Date(now);
+    yesterday.setDate(yesterday.getDate()-1);
+    var yk=yesterday.toISOString().slice(0,10);
+    var days=getSavedDays();
+    // Make sure yesterday is saved
+    if(!days[yk]&&ld('lastDate','')===yk){
+      // Save yesterday's data before resetting
+      var oldChecked=ld('hc_'+yk,{});
+      var priDone=0;var genDone=0;
+      for(var i=0;i<HAB.priority.length;i++){if(oldChecked['pri_'+i])priDone++;}
+      for(var j=0;j<HAB.general.length;j++){if(oldChecked['gen_'+j])genDone++;}
+      days[yk]={
+        date:yk,
+        hab_checked:oldChecked,
+        pri_done:priDone,
+        pri_total:HAB.priority.length,
+        gen_done:genDone,
+        gen_total:HAB.general.length,
+        pct:Math.round(priDone/HAB.priority.length*100),
+        saved_at:new Date().toISOString()
+      };
+      sv('saved_days',days);
+    }
+    // Reset for new day
+    if(ld('lastDate','')!==today()){
+      sv('lastDate',today());
+      ST.habChecked={};
+      sv('hc_'+today(),{});
+      sv('hc_latest',{date:today(),data:{}});
+      renderHabits();updateDashRing();updateStreak();renderDash();updateDayStatus();
+    }
+  }
 }
 
 // ══ MODAL ══
