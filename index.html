@@ -435,6 +435,44 @@ function initSupabase(){
 }
 
 // Push all local state to Supabase
+
+// Full restore from cloud — used on fresh install
+async function fullRestoreFromCloud(){
+  if(!sbClient)return;
+  try{
+    showSyncIndicator('↓');
+    var r=await sbClient.from('mos_state').select('*').eq('id','marron').single();
+    if(r.error||!r.data){showSyncIndicator('✗');return;}
+    var data=r.data;
+
+    // Restore EVERYTHING from cloud unconditionally
+    if(data.hab_checked){ST.habChecked=data.hab_checked;sv('hc_'+today(),data.hab_checked);}
+    if(data.hab_date){sv('lastDate',data.hab_date);}
+    if(data.meta_checked){ST.metaChecked=data.meta_checked;sv('mc',data.meta_checked);}
+    if(data.streak){ST.streak=data.streak;sv('streak',data.streak);}
+    if(data.train_checked){ST.trainChecked=data.train_checked;sv('tc',data.train_checked);}
+    if(data.rpe_data){ST.rpe=data.rpe_data;sv('rpe',data.rpe_data);}
+    if(data.ex_data){ST.exData=data.ex_data;sv('exData',data.ex_data);}
+    if(data.milli_checked){ST.milliChecked=data.milli_checked;sv('millc',data.milli_checked);}
+    if(data.fin_notes!==null&&data.fin_notes!==undefined){ST.finNotes=data.fin_notes;sv('finn',data.fin_notes);}
+    if(data.pendientes){sv('pendientes',data.pendientes);}
+    if(data.custom_split){sv('custom_split',data.custom_split);}
+    if(data.saved_days){sv('saved_days',data.saved_days);}
+    if(data.nota&&Object.keys(data.nota).length>0){ST.nota=data.nota;sv('nota',data.nota);}
+    if(data.identity_data&&Object.keys(data.identity_data).length>0){sv('identity',data.identity_data);}
+    if(data.current_week){ST.currentWeek=data.current_week;sv('cw',data.current_week);}
+
+    // Mark as not fresh anymore
+    sv('lastDate',today());
+
+    // Re-render everything
+    renderHabits();updateDashRing();updateStreak();renderDash();updateDayStatus();updatePendCount();
+
+    showSyncIndicator('✓');
+    console.log('Full restore from cloud complete');
+  }catch(e){console.error('Full restore error:',e);showSyncIndicator('✗');}
+}
+
 async function syncToCloud(){
   if(!sbClient)return;
   try{
@@ -468,34 +506,41 @@ async function syncFromCloud(){
   if(!sbClient)return;
   try{
     showSyncIndicator('↓');
-    const {data,error}=await sbClient.from('mos_state').select('*').eq('id','marron').single();
-    if(error||!data)return;
-    // Merge cloud into local - cloud wins if newer
+    var r2=await sbClient.from('mos_state').select('*').eq('id','marron').single();
+    if(r2.error||!r2.data)return;
+    var data=r2.data;
+
+    // Habits: merge — whoever has more checks wins
     if(data.hab_checked){
-      // Merge: keep whichever has more checks for today
-      var localCount=0;var cloudCount=0;
-      Object.keys(ST.habChecked).forEach(function(k){if(ST.habChecked[k])localCount++;});
-      Object.keys(data.hab_checked).forEach(function(k){if(data.hab_checked[k])cloudCount++;});
-      if(cloudCount>=localCount){ST.habChecked=data.hab_checked;sv('hc_'+today(),data.hab_checked);}
+      var lc=0;var cc=0;
+      Object.keys(ST.habChecked).forEach(function(k){if(ST.habChecked[k])lc++;});
+      Object.keys(data.hab_checked).forEach(function(k){if(data.hab_checked[k])cc++;});
+      if(cc>=lc){ST.habChecked=data.hab_checked;sv('hc_'+today(),data.hab_checked);}
     }
+
+    // Everything else: cloud always wins (latest data)
     if(data.meta_checked){ST.metaChecked=data.meta_checked;sv('mc',data.meta_checked);}
     if(data.streak){ST.streak=data.streak;sv('streak',data.streak);}
     if(data.train_checked){ST.trainChecked=data.train_checked;sv('tc',data.train_checked);}
     if(data.rpe_data){ST.rpe=data.rpe_data;sv('rpe',data.rpe_data);}
     if(data.ex_data){ST.exData=data.ex_data;sv('exData',data.ex_data);}
     if(data.milli_checked){ST.milliChecked=data.milli_checked;sv('millc',data.milli_checked);}
-    if(data.fin_notes!==null){ST.finNotes=data.fin_notes;sv('finn',data.fin_notes);}
-    if(data.pendientes&&data.pendientes.length>0){sv('pendientes',data.pendientes);}else{var localPend=ld('pendientes',[]);if(localPend.length>0){}}
-    if(data.custom_split&&!getCustomSplit()){sv('custom_split',data.custom_split);}
-    if(data.saved_days&&Object.keys(data.saved_days).length>0){
+    if(data.fin_notes!==null&&data.fin_notes!==undefined){ST.finNotes=data.fin_notes;sv('finn',data.fin_notes);}
+    if(data.pendientes){sv('pendientes',data.pendientes);}
+    if(data.custom_split){sv('custom_split',data.custom_split);}
+    if(data.saved_days){
       var localSD=getSavedDays();var cloudSD=data.saved_days;
-      // Merge: cloud wins for past days, local wins for today
-      Object.keys(cloudSD).forEach(function(dk){if(dk!==today()||!localSD[dk]){localSD[dk]=cloudSD[dk];}});
+      Object.keys(cloudSD).forEach(function(dk){
+        if(!localSD[dk]||(dk!==today())){localSD[dk]=cloudSD[dk];}
+      });
       sv('saved_days',localSD);
     }
     if(data.nota&&Object.keys(data.nota).length>0){ST.nota=data.nota;sv('nota',data.nota);}
     if(data.identity_data&&Object.keys(data.identity_data).length>0){sv('identity',data.identity_data);}
-    if(data.current_week){ST.currentWeek=data.current_week;sv('cw',data.current_week);}
+
+    // Re-render active view
+    updatePendCount();
+
     showSyncIndicator('✓');
     console.log('Synced from cloud');
   }catch(e){console.error('Pull error:',e);showSyncIndicator('✗');}
@@ -549,7 +594,16 @@ function showSyncIndicator(status){
 // Auto-sync every 30 seconds
 function startAutoSync(){
   if(navigator.onLine){
-    syncToCloud().then(function(){syncFromCloud();});
+    // Detect fresh install — if no data in localStorage, pull from cloud first
+    var isFresh=!ld('lastDate','')&&!ld('mc',null)&&!ld('streak',null);
+    if(isFresh){
+      console.log('Fresh install detected — restoring from cloud');
+      fullRestoreFromCloud().then(function(){
+        console.log('Restore complete');
+      });
+    } else {
+      syncToCloud().then(function(){syncFromCloud();});
+    }
   } else {
     var el=document.getElementById('syncIndicator');
     if(el){el.textContent='☁ offline';el.style.color='var(--mu)';}
@@ -587,6 +641,7 @@ const SPLIT_BASE=[
     {name:'Remo supino barra',sets:'× 2'},
     {name:'Curl martillo',sets:'× 2'},
     {name:'Remo T / Pullover',sets:'× 2'},
+    {name:'Encogimiento hombros barra abierta',sets:'× 2'},
     {name:'Peckfly invertido',sets:'× 2'},
     {name:'Laterales',sets:'× 2'}
   ]},
@@ -611,6 +666,7 @@ const SPLIT_BASE=[
     {name:'Remo supino barra',sets:'× 2'},
     {name:'Curl martillo',sets:'× 2'},
     {name:'Remo T / Pullover',sets:'× 2'},
+    {name:'Encogimiento hombros barra abierta',sets:'× 2'},
     {name:'Peckfly invertido',sets:'× 2'},
     {name:'Laterales',sets:'× 2'}
   ]},
