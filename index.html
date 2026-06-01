@@ -263,7 +263,7 @@ textarea.inp{resize:none;line-height:1.6}
   <div id="dayStatus"></div>
   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
     <button class="btn bts btg" onclick="resetHabits()">Reiniciar día</button>
-    <button class="btn bts btg" onclick="goTo('stats',null);setTimeout(function(){showHabHistory();},100)">Ver historial →</button>
+    <button class="btn bts btg" onclick="showHabHistoryInline()">Ver historial →</button>
   </div>
 </div>
 
@@ -594,7 +594,9 @@ async function syncToCloud(){
       view_week:viewWeek||0,
       updated_at:new Date().toISOString()
     };
-    await sbClient.from('mos_state').upsert(data);
+    var res=await sbClient.from('mos_state').upsert(data);
+    if(res.error){console.error('Sync upsert error:',JSON.stringify(res.error));}
+    else{console.log('Synced to cloud OK');}
     showSyncIndicator('✓');
   }catch(e){console.error('Sync error:',e);showSyncIndicator('✗');}
 }
@@ -1178,7 +1180,7 @@ function renderDash(){
   const cl=METAS_6M[0].items.filter((_,i)=>ST.metaChecked[`clientes_${i}`]).length;
   const md=Object.values(ST.milliChecked).filter(Boolean).length;
   const s=document.getElementById('dashSummary');
-  if(s)s.innerHTML=`<div class="rw"><span class="rk">Hábitos prioridad</span><span class="rv">${pd}/${HAB.priority.length}</span></div><div class="rw"><span class="rk">Racha</span><span class="rv" style="color:var(--gold)">🔥 ${ST.streak.count} días</span></div><div class="rw"><span class="rk">Clientes ECOWEB</span><span class="rv">${cl}/15</span></div><div class="rw"><span class="rk">Semana entrenamiento</span><span class="rv">Sem ${ST.currentWeek}</span></div><div class="rw"><span class="rk">Hacia el millón</span><span class="rv">$${md*10}k / $1M</span></div><div class="rw"><span class="rk">Identidad</span><span class="rv" style="cursor:pointer;color:var(--gold)" onclick="goTo('id',null)">Ver →</span></div>`;
+  if(s)s.innerHTML=`<div class="rw"><span class="rk">Hábitos prioridad</span><span class="rv">${pd}/${HAB.priority.length}</span></div><div class="rw"><span class="rk">Racha</span><span class="rv" style="color:var(--gold)">🔥 ${ST.streak.count} días</span></div><div class="rw"><span class="rk">Clientes ECOWEB</span><span class="rv">${cl}/15</span></div><div class="rw"><span class="rk">Semana entrenamiento</span><span class="rv">Sem ${ST.currentWeek}</span></div><div class="rw"><span class="rk">Hacia el millón</span><span class="rv">$${md*10}k / $1M</span></div><div class="rw"><span class="rk">Identidad</span><span class="rv" style="cursor:pointer;color:var(--gold)" onclick="goTo('id',null)">Ver →</span></div><div class=\"rw\"><span class=\"rk\">Sync</span><span class=\"rv\" style=\"cursor:pointer;color:var(--gold)\" onclick=\"forceSyncNow()\">Forzar ↑↓</span></div>`;
 }
 function renderPendientes(){
   const now=new Date(),box=document.getElementById('pendingBox');if(!box)return;
@@ -2665,6 +2667,84 @@ function checkMidnightReset(){
       renderHabits();updateDashRing();updateStreak();renderDash();updateDayStatus();
     }
   }
+}
+
+
+// ══ INLINE HABIT HISTORY ══
+function showHabHistoryInline(){
+  var savedDays=getSavedDays();
+  var sorted=Object.keys(savedDays).sort(function(a,b){return b.localeCompare(a);});
+
+  // Build modal content
+  var html='<div style="font-size:15px;font-weight:800;margin-bottom:14px">Historial de hábitos</div>';
+
+  if(sorted.length===0){
+    html+='<div style="font-size:11px;color:var(--mu);padding:20px 0;text-align:center">Sin días guardados aún. Los hábitos se guardan automáticamente al marcarlos.</div>';
+  } else {
+    html+='<div style="font-size:9px;color:var(--mu);margin-bottom:10px">'+sorted.length+' días registrados · toca para ver detalle</div>';
+    sorted.forEach(function(dk){
+      var d=savedDays[dk];
+      var pct=d.pct||0;
+      var statusColor=pct===100?'var(--teal)':pct>=70?'var(--gold)':'var(--mu)';
+      var icon=pct===100?'✓':pct>=50?'◐':'○';
+      html+='<div style="background:var(--card);border:0.5px solid var(--b);border-radius:var(--rs);padding:10px 12px;margin-bottom:5px;cursor:pointer" onclick="expandHabDay(this,\''+dk+'\')">';
+      html+='<div style="display:flex;align-items:center;justify-content:space-between">';
+      html+='<div><div style="font-size:11px;font-weight:700">'+dk+'</div>';
+      html+='<div style="font-size:9px;color:var(--mu);margin-top:2px">Prioridad: '+d.pri_done+'/'+d.pri_total+' · Generales: '+(d.gen_done||0)+'/'+(d.gen_total||0)+'</div></div>';
+      html+='<div style="font-size:16px;font-weight:800;color:'+statusColor+'">'+icon+' '+pct+'%</div>';
+      html+='</div></div>';
+    });
+  }
+
+  document.getElementById('modalContent').innerHTML=html;
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function expandHabDay(el,dk){
+  // If already expanded, collapse
+  var existing=el.querySelector('.hab-expand');
+  if(existing){existing.remove();return;}
+
+  var savedDays=getSavedDays();
+  var d=savedDays[dk];
+  if(!d||!d.hab_checked)return;
+
+  var div=document.createElement('div');
+  div.className='hab-expand';
+  div.style.cssText='margin-top:8px;border-top:0.5px solid var(--b);padding-top:8px';
+
+  HAB.priority.forEach(function(h,i){
+    var done=d.hab_checked['pri_'+i];
+    var item=document.createElement('div');
+    item.style.cssText='font-size:9px;color:'+(done?'var(--teal)':'var(--coral)')+';padding:3px 0';
+    item.textContent=(done?'✓ ':'✗ ')+h;
+    div.appendChild(item);
+  });
+
+  var genLabel=document.createElement('div');
+  genLabel.style.cssText='font-size:8px;color:var(--mu);margin-top:6px;margin-bottom:3px;font-weight:700';
+  genLabel.textContent='GENERALES';
+  div.appendChild(genLabel);
+
+  HAB.general.forEach(function(h,i){
+    var done=d.hab_checked['gen_'+i];
+    var item=document.createElement('div');
+    item.style.cssText='font-size:9px;color:'+(done?'var(--teal)':'var(--mu)')+';padding:3px 0';
+    item.textContent=(done?'✓ ':'✗ ')+h;
+    div.appendChild(item);
+  });
+
+  el.appendChild(div);
+}
+
+
+function forceSyncNow(){
+  if(!navigator.onLine){alert('Sin conexión');return;}
+  syncToCloud().then(function(){
+    return fullRestoreFromCloud();
+  }).then(function(){
+    alert('✓ Sincronización completa');
+  });
 }
 
 // ══ MODAL ══
