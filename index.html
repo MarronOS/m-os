@@ -426,6 +426,7 @@ let sbClient=null;
 var syncTimer=null;
 var syncInterval=null;
 var viewWeek=1;
+var cloudRestoreDone=false;
 
 function initSupabase(){
   try{
@@ -443,35 +444,132 @@ async function fullRestoreFromCloud(){
     showSyncIndicator('↓');
     var r=await sbClient.from('mos_state').select('*').eq('id','marron').single();
     if(r.error||!r.data){showSyncIndicator('✗');return;}
-    var data=r.data;
+    var cloud=r.data;
 
-    // Restore EVERYTHING from cloud unconditionally
-    if(data.hab_checked){ST.habChecked=data.hab_checked;sv('hc_'+today(),data.hab_checked);}
-    if(data.hab_date){sv('lastDate',data.hab_date);}
-    if(data.meta_checked){ST.metaChecked=data.meta_checked;sv('mc',data.meta_checked);}
-    if(data.streak){ST.streak=data.streak;sv('streak',data.streak);}
-    if(data.train_checked){ST.trainChecked=data.train_checked;sv('tc',data.train_checked);}
-    if(data.rpe_data){ST.rpe=data.rpe_data;sv('rpe',data.rpe_data);}
-    if(data.ex_data){ST.exData=data.ex_data;sv('exData',data.ex_data);}
-    if(data.milli_checked){ST.milliChecked=data.milli_checked;sv('millc',data.milli_checked);}
-    if(data.fin_notes!==null&&data.fin_notes!==undefined){ST.finNotes=data.fin_notes;sv('finn',data.fin_notes);}
-    if(data.pendientes){sv('pendientes',data.pendientes);}
-    if(data.custom_split){sv('custom_split',data.custom_split);}
-    if(data.saved_days){sv('saved_days',data.saved_days);}
-    if(data.nota&&Object.keys(data.nota).length>0){ST.nota=data.nota;sv('nota',data.nota);}
-    if(data.identity_data&&Object.keys(data.identity_data).length>0){sv('identity',data.identity_data);}
-    if(data.current_week){ST.currentWeek=data.current_week;sv('cw',data.current_week);}
+    // Smart merge: for each field, take whichever has MORE data
+    // This prevents empty local from overwriting cloud AND prevents
+    // stale cloud from overwriting fresh local edits
 
-    // Mark as not fresh anymore
+    // Habits: whoever has more checks for today wins
+    if(cloud.hab_checked){
+      var lc=0;var cc=0;
+      Object.keys(ST.habChecked||{}).forEach(function(k){if(ST.habChecked[k])lc++;});
+      Object.keys(cloud.hab_checked||{}).forEach(function(k){if(cloud.hab_checked[k])cc++;});
+      if(cc>=lc){ST.habChecked=cloud.hab_checked;sv('hc_'+today(),cloud.hab_checked);}
+    }
+
+    // Metas: whoever has more checked items wins
+    if(cloud.meta_checked){
+      var localMetaCount=Object.values(ST.metaChecked||{}).filter(Boolean).length;
+      var cloudMetaCount=Object.values(cloud.meta_checked||{}).filter(Boolean).length;
+      if(cloudMetaCount>=localMetaCount){ST.metaChecked=cloud.meta_checked;sv('mc',cloud.meta_checked);}
+    }
+
+    // Streak: whoever has higher count wins
+    if(cloud.streak){
+      var localStreak=(ST.streak||{}).count||0;
+      var cloudStreak=(cloud.streak||{}).count||0;
+      if(cloudStreak>=localStreak){ST.streak=cloud.streak;sv('streak',cloud.streak);}
+    }
+
+    // Training data: whoever has more keys wins
+    if(cloud.train_checked){
+      var ltc=Object.keys(ST.trainChecked||{}).length;
+      var ctc=Object.keys(cloud.train_checked||{}).length;
+      if(ctc>=ltc){ST.trainChecked=cloud.train_checked;sv('tc',cloud.train_checked);}
+    }
+
+    // RPE: merge — cloud fills gaps
+    if(cloud.rpe_data){
+      var merged_rpe=JSON.parse(JSON.stringify(ST.rpe||{}));
+      Object.keys(cloud.rpe_data).forEach(function(k){
+        if(!merged_rpe[k]||merged_rpe[k]==='')merged_rpe[k]=cloud.rpe_data[k];
+      });
+      ST.rpe=merged_rpe;sv('rpe',merged_rpe);
+    }
+
+    // ExData: merge — cloud fills gaps
+    if(cloud.ex_data){
+      var merged_ex=JSON.parse(JSON.stringify(ST.exData||{}));
+      Object.keys(cloud.ex_data).forEach(function(k){
+        if(!merged_ex[k])merged_ex[k]=cloud.ex_data[k];
+      });
+      ST.exData=merged_ex;sv('exData',merged_ex);
+    }
+
+    // Milli: whoever has more checked wins
+    if(cloud.milli_checked){
+      var localMilli=Object.values(ST.milliChecked||{}).filter(Boolean).length;
+      var cloudMilli=Object.values(cloud.milli_checked||{}).filter(Boolean).length;
+      if(cloudMilli>=localMilli){ST.milliChecked=cloud.milli_checked;sv('millc',cloud.milli_checked);}
+    }
+
+    // Fin notes: whoever has more text wins
+    if(cloud.fin_notes!==null&&cloud.fin_notes!==undefined){
+      if((cloud.fin_notes||'').length>=(ST.finNotes||'').length){
+        ST.finNotes=cloud.fin_notes;sv('finn',cloud.fin_notes);
+      }
+    }
+
+    // Pendientes: whoever has more items wins
+    if(cloud.pendientes){
+      var localPend=ld('pendientes',[]);
+      if((cloud.pendientes||[]).length>=(localPend||[]).length){
+        sv('pendientes',cloud.pendientes);
+      }
+    }
+
+    // Custom split: cloud wins if local is null/default
+    if(cloud.custom_split){
+      var localSplit=getCustomSplit();
+      if(!localSplit){
+        sv('custom_split',cloud.custom_split);
+      } else {
+        // Both exist — whoever has more total exercises wins
+        var localExCount=0;var cloudExCount=0;
+        localSplit.forEach(function(d){localExCount+=d.exercises.length;});
+        cloud.custom_split.forEach(function(d){cloudExCount+=d.exercises.length;});
+        if(cloudExCount>localExCount)sv('custom_split',cloud.custom_split);
+      }
+    }
+
+    // Saved days: merge all — never lose a saved day
+    if(cloud.saved_days){
+      var localSD=getSavedDays();
+      Object.keys(cloud.saved_days).forEach(function(dk){
+        if(!localSD[dk])localSD[dk]=cloud.saved_days[dk];
+      });
+      sv('saved_days',localSD);
+    }
+
+    // Nota: cloud wins if it has content and local is default
+    if(cloud.nota&&Object.keys(cloud.nota).length>0){
+      var localNota=ST.nota||{};
+      var localItems=(localNota.principios||[]).length+(localNota.reglas||[]).length+(localNota.metodologia||[]).length;
+      var cloudItems=(cloud.nota.principios||[]).length+(cloud.nota.reglas||[]).length+(cloud.nota.metodologia||[]).length;
+      if(cloudItems>=localItems){ST.nota=cloud.nota;sv('nota',cloud.nota);}
+    }
+
+    // Identity: cloud wins if local is default
+    if(cloud.identity_data&&Object.keys(cloud.identity_data).length>0){
+      var localId=ld('identity',null);
+      if(!localId||JSON.stringify(localId)===JSON.stringify(ID_DEFAULT)){
+        sv('identity',cloud.identity_data);
+      }
+    }
+
+    // Ensure lastDate is set
     sv('lastDate',today());
 
     // Re-render everything
     renderHabits();updateDashRing();updateStreak();renderDash();updateDayStatus();updatePendCount();
 
+    cloudRestoreDone=true;
     showSyncIndicator('✓');
-    console.log('Full restore from cloud complete');
-  }catch(e){console.error('Full restore error:',e);showSyncIndicator('✗');}
+    console.log('Smart merge from cloud complete');
+  }catch(e){console.error('Restore error:',e);showSyncIndicator('✗');}
 }
+
 
 async function syncToCloud(){
   if(!sbClient)return;
@@ -594,23 +692,23 @@ function showSyncIndicator(status){
 // Auto-sync every 30 seconds
 function startAutoSync(){
   if(navigator.onLine){
-    // Detect fresh install — if no data in localStorage, pull from cloud first
-    var isFresh=!ld('lastDate','')&&!ld('mc',null)&&!ld('streak',null);
-    if(isFresh){
-      console.log('Fresh install detected — restoring from cloud');
-      fullRestoreFromCloud().then(function(){
-        console.log('Restore complete');
-      });
-    } else {
-      syncToCloud().then(function(){syncFromCloud();});
-    }
+    // ALWAYS pull from cloud first — never push before pulling
+    console.log('Loading from cloud first...');
+    fullRestoreFromCloud().then(function(){
+      console.log('Cloud data loaded — starting sync cycle');
+      // Now safe to start push cycle
+      syncInterval=setInterval(function(){
+        if(navigator.onLine)syncToCloud();
+      },30000);
+    });
   } else {
+    cloudRestoreDone=true; // Allow local edits when offline
     var el=document.getElementById('syncIndicator');
     if(el){el.textContent='☁ offline';el.style.color='var(--mu)';}
+    syncInterval=setInterval(function(){
+      if(navigator.onLine)syncToCloud();
+    },30000);
   }
-  syncInterval=setInterval(function(){
-    if(navigator.onLine)syncToCloud();
-  },30000);
 }
 
 // ══ CONSTANTS ══
@@ -906,7 +1004,18 @@ let ST={
 function initApp(){
   var saved=ld('lastDate','');
   if(saved!==today()){
-    // New day — reset habits
+    // New day — save yesterday first, then reset
+    var yesterday=new Date();yesterday.setDate(yesterday.getDate()-1);
+    var yk=yesterday.toISOString().slice(0,10);
+    var oldChecked=ld('hc_'+yk,ST.habChecked);
+    var days=getSavedDays();
+    if(!days[yk]&&Object.keys(oldChecked).length>0){
+      var pd=0;var gd=0;
+      for(var si=0;si<HAB.priority.length;si++){if(oldChecked['pri_'+si])pd++;}
+      for(var sj=0;sj<HAB.general.length;sj++){if(oldChecked['gen_'+sj])gd++;}
+      days[yk]={date:yk,hab_checked:oldChecked,pri_done:pd,pri_total:HAB.priority.length,gen_done:gd,gen_total:HAB.general.length,pct:Math.round(pd/HAB.priority.length*100),saved_at:new Date().toISOString()};
+      sv('saved_days',days);
+    }
     sv('lastDate',today());
     ST.habChecked={};
     sv('hc_'+today(),{});
@@ -1149,7 +1258,7 @@ function renderFin(){
   <div class="card">${Array.from({length:100},(_,i)=>{const k=`m_${i}`,d=ST.milliChecked[k];return `<div class="ci ${d?'done':''}" onclick="toggleMilli('${k}',this)"><div class="cb"></div><div class="cl">$${(i+1)*10}k MXN${i===99?' ★ $1,000,000 — META':''}</div></div>`;}).join('')}</div>
   <div class="sl">Notas</div><div class="card"><textarea class="inp" rows="4" placeholder="Ingresos, gastos, movimientos..." onchange="ST.finNotes=this.value;sv('finn',this.value)">${ST.finNotes}</textarea></div>`;
 }
-function toggleMilli(k,el){ST.milliChecked[k]=!ST.milliChecked[k];el.classList.toggle('done',ST.milliChecked[k]);sv('millc',ST.milliChecked);renderFin()}
+function toggleMilli(k,el){ST.milliChecked[k]=!ST.milliChecked[k];el.classList.toggle('done',ST.milliChecked[k]);sv('millc',ST.milliChecked);renderFin();debounceSync()}
 
 // ══ TRAINING ══
 function showTrainTab(tab){
@@ -1230,7 +1339,7 @@ function renderTodaySession(c){
 
 function saveExData(k,field,val){
   if(!ST.exData[k])ST.exData[k]={peso:'',reps:''};
-  ST.exData[k][field]=val;sv('exData',ST.exData);
+  ST.exData[k][field]=val;sv('exData',ST.exData);debounceSync();
 }
 
 function renderSplitView(c){
@@ -1305,10 +1414,29 @@ function renderSplitView(c){
       var repIn=document.createElement('input');repIn.className='fi';repIn.style.width='40px';repIn.type='text';repIn.value=ex.reps||'';repIn.placeholder='reps';
       (function(dIdx,eIdx){repIn.addEventListener('change',function(){var sp=getCurrentSplit();sp[dIdx].exercises[eIdx].reps=this.value;saveCustomSplit(sp);});})(di,ei);
 
+      var upBtn=document.createElement('button');upBtn.style.cssText='background:none;border:none;color:var(--mu);font-size:12px;cursor:pointer;padding:0 2px';upBtn.textContent='▲';
+      (function(dIdx,eIdx){upBtn.addEventListener('click',function(){
+        if(eIdx===0)return;
+        var sp=getCurrentSplit();var tmp=sp[dIdx].exercises[eIdx];
+        sp[dIdx].exercises[eIdx]=sp[dIdx].exercises[eIdx-1];
+        sp[dIdx].exercises[eIdx-1]=tmp;
+        saveCustomSplit(sp);renderSplitView(c);
+      });})(di,ei);
+
+      var downBtn=document.createElement('button');downBtn.style.cssText='background:none;border:none;color:var(--mu);font-size:12px;cursor:pointer;padding:0 2px';downBtn.textContent='▼';
+      (function(dIdx,eIdx){downBtn.addEventListener('click',function(){
+        var sp=getCurrentSplit();
+        if(eIdx>=sp[dIdx].exercises.length-1)return;
+        var tmp=sp[dIdx].exercises[eIdx];
+        sp[dIdx].exercises[eIdx]=sp[dIdx].exercises[eIdx+1];
+        sp[dIdx].exercises[eIdx+1]=tmp;
+        saveCustomSplit(sp);renderSplitView(c);
+      });})(di,ei);
+
       var delBtn=document.createElement('button');delBtn.style.cssText='background:none;border:none;color:var(--mu);font-size:14px;cursor:pointer;padding:0 2px';delBtn.textContent='×';
       (function(dIdx,eIdx){delBtn.addEventListener('click',function(){var sp=getCurrentSplit();sp[dIdx].exercises.splice(eIdx,1);saveCustomSplit(sp);renderSplitView(c);});})(di,ei);
 
-      row.appendChild(nameEl);row.appendChild(setsIn);row.appendChild(kgIn);row.appendChild(repIn);row.appendChild(delBtn);
+      row.appendChild(nameEl);row.appendChild(setsIn);row.appendChild(kgIn);row.appendChild(repIn);row.appendChild(upBtn);row.appendChild(downBtn);row.appendChild(delBtn);
       body.appendChild(row);
     });
 
@@ -1394,7 +1522,7 @@ function editNotaSection(sec){
   document.getElementById('modalContent').innerHTML=`<div style="font-size:15px;font-weight:800;margin-bottom:14px">Editar — ${sec}</div><div style="font-size:9px;color:var(--mu);margin-bottom:6px">Una línea por punto</div><textarea class="inp" rows="12" id="notaEdit">${ST.nota[sec].join('\n')}</textarea><div style="margin-top:10px"><button class="btn" onclick="saveNotaSection('${sec}')">Guardar</button></div>`;
   document.getElementById('modalOverlay').classList.add('open');
 }
-function saveNotaSection(sec){ST.nota[sec]=document.getElementById('notaEdit').value.split('\n').filter(l=>l.trim());sv('nota',ST.nota);closeModal();renderNota()}
+function saveNotaSection(sec){ST.nota[sec]=document.getElementById('notaEdit').value.split('\n').filter(l=>l.trim());sv('nota',ST.nota);closeModal();renderNota();debounceSync()}
 
 // ══ SEMANAL ══
 function renderSemanal(){
@@ -1430,9 +1558,9 @@ function renderIdentity(){
     +'<div class="card">'+s.attrs.map(function(a,ai){return '<div style="display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:0.5px solid var(--b)"><div style="width:5px;height:5px;border-radius:50%;background:'+s.color+';flex-shrink:0;margin-top:6px"></div><div style="font-size:11px;color:var(--w);line-height:1.5;flex:1;cursor:pointer" onclick="editAttr('+si+','+ai+')">'+a+'</div></div>';}).join('')+'</div>';
   }).join('');
 }
-function editTag(i){var id=ld('identity',ID_DEFAULT);var v=prompt('Editar:',id.tags[i]);if(v===null)return;if(!v)id.tags.splice(i,1);else id.tags[i]=v;sv('identity',id);renderIdentity()}
-function addTag(){var id=ld('identity',ID_DEFAULT);var v=prompt('Nuevo tag:','');if(v){id.tags.push(v);sv('identity',id);renderIdentity()}}
-function editAttr(si,ai){var id=ld('identity',ID_DEFAULT);var v=prompt('Editar:',id.sections[si].attrs[ai]);if(v===null)return;if(!v)id.sections[si].attrs.splice(ai,1);else id.sections[si].attrs[ai]=v;sv('identity',id);renderIdentity()}
+function editTag(i){var id=ld('identity',ID_DEFAULT);var v=prompt('Editar:',id.tags[i]);if(v===null)return;if(!v)id.tags.splice(i,1);else id.tags[i]=v;sv('identity',id);renderIdentity();debounceSync()}
+function addTag(){var id=ld('identity',ID_DEFAULT);var v=prompt('Nuevo tag:','');if(v){id.tags.push(v);sv('identity',id);renderIdentity();debounceSync()}}
+function editAttr(si,ai){var id=ld('identity',ID_DEFAULT);var v=prompt('Editar:',id.sections[si].attrs[ai]);if(v===null)return;if(!v)id.sections[si].attrs.splice(ai,1);else id.sections[si].attrs[ai]=v;sv('identity',id);renderIdentity();debounceSync()}
 function addAttr(si){var id=ld('identity',ID_DEFAULT);var v=prompt('Nuevo:','');if(v){id.sections[si].attrs.push(v);sv('identity',id);renderIdentity()}}
 function editSecTitle(si){var id=ld('identity',ID_DEFAULT);var v=prompt('Título:',id.sections[si].title);if(v){id.sections[si].title=v;sv('identity',id);renderIdentity()}}
 function addIdAttr(){var id=ld('identity',ID_DEFAULT);var opts=id.sections.map(function(s,i){return i+': '+s.title;}).join('\n');var si=parseInt(prompt('¿Sección?\n'+opts)||'0');var v=prompt('Atributo:','');if(v&&id.sections[si]){id.sections[si].attrs.push(v);sv('identity',id);renderIdentity()}}
@@ -1736,7 +1864,46 @@ renderTodaySession=function(c){
       var sp=getCurrentSplit();sp[dIdx3].exercises.splice(eIdx2,1);saveCustomSplit(sp);renderTodaySession(document.getElementById('trainContent'));
     });})(splitIdx,ei);
 
-    exTop.appendChild(exSc);exTop.appendChild(exName);exTop.appendChild(exSets);exTop.appendChild(delBtn);
+    var upBtn2=document.createElement('button');upBtn2.style.cssText='background:none;border:none;color:var(--mu);font-size:10px;cursor:pointer;padding:0 2px';upBtn2.textContent='▲';
+    (function(sIdx,eIdx2){upBtn2.addEventListener('click',function(e){
+      e.stopPropagation();
+      if(eIdx2===0)return;
+      var sp=getCurrentSplit();
+      // Swap exercises
+      var tmp=sp[sIdx].exercises[eIdx2];
+      sp[sIdx].exercises[eIdx2]=sp[sIdx].exercises[eIdx2-1];
+      sp[sIdx].exercises[eIdx2-1]=tmp;
+      // Swap stored data
+      var dk1='exd_'+sIdx+'_'+eIdx2;
+      var dk2='exd_'+sIdx+'_'+(eIdx2-1);
+      var d1=ST.exData[dk1]||{peso:'',reps:''};
+      var d2=ST.exData[dk2]||{peso:'',reps:''};
+      ST.exData[dk1]=d2;ST.exData[dk2]=d1;
+      sv('exData',ST.exData);
+      saveCustomSplit(sp);
+      renderTodaySession(document.getElementById('trainContent'));
+    });})(splitIdx,ei);
+
+    var downBtn2=document.createElement('button');downBtn2.style.cssText='background:none;border:none;color:var(--mu);font-size:10px;cursor:pointer;padding:0 2px';downBtn2.textContent='▼';
+    (function(sIdx2,eIdx3){downBtn2.addEventListener('click',function(e){
+      e.stopPropagation();
+      var sp=getCurrentSplit();
+      if(eIdx3>=sp[sIdx2].exercises.length-1)return;
+      var tmp=sp[sIdx2].exercises[eIdx3];
+      sp[sIdx2].exercises[eIdx3]=sp[sIdx2].exercises[eIdx3+1];
+      sp[sIdx2].exercises[eIdx3+1]=tmp;
+      // Swap stored data
+      var dk1='exd_'+sIdx2+'_'+eIdx3;
+      var dk2='exd_'+sIdx2+'_'+(eIdx3+1);
+      var d1=ST.exData[dk1]||{peso:'',reps:''};
+      var d2=ST.exData[dk2]||{peso:'',reps:''};
+      ST.exData[dk1]=d2;ST.exData[dk2]=d1;
+      sv('exData',ST.exData);
+      saveCustomSplit(sp);
+      renderTodaySession(document.getElementById('trainContent'));
+    });})(splitIdx,ei);
+
+    exTop.appendChild(exSc);exTop.appendChild(exName);exTop.appendChild(exSets);exTop.appendChild(upBtn2);exTop.appendChild(downBtn2);exTop.appendChild(delBtn);
     exRow.appendChild(exTop);
 
     var exInputs=document.createElement('div');exInputs.style.cssText='display:flex;gap:5px;margin-top:4px;margin-left:21px';
@@ -1762,11 +1929,13 @@ window.addEventListener('online', function(){
   console.log('Conexion recuperada — sincronizando...');
   showSyncIndicator('↓');
   setTimeout(function(){
-    syncToCloud().then(function(){
+    // Pull first, then push — never overwrite cloud with stale data
+    fullRestoreFromCloud().then(function(){
+      syncToCloud();
       logHabitsToCloud();
       logTrainToCloud();
     });
-  }, 1000); // small delay to let connection stabilize
+  }, 1000);
 });
 
 window.addEventListener('offline', function(){
@@ -1777,12 +1946,12 @@ window.addEventListener('offline', function(){
 
 // Override debounceSync to handle offline gracefully
 function debounceSync(){
+  if(!cloudRestoreDone)return; // Don't push until we've pulled from cloud
   if(syncTimer)clearTimeout(syncTimer);
   syncTimer=setTimeout(function(){
     if(navigator.onLine){
       syncToCloud();
     } else {
-      // Already saved locally via sv() calls — will sync when online
       var el=document.getElementById('syncIndicator');
       if(el){el.textContent='☁ local';el.style.color='var(--amber)';}
     }
