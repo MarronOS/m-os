@@ -45,7 +45,7 @@ function makeCloud() {
 function serve() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mos-'));
   let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-  html = html.replace("const SB_URL='';", `const SB_URL='${MOCK}';`).replace("const SB_KEY='';", "const SB_KEY='test-key';");
+  html = html.replace(/const SB_URL='[^']*';/, `const SB_URL='${MOCK}';`).replace(/const SB_KEY='[^']*';/, "const SB_KEY='test-key';");
   fs.writeFileSync(path.join(dir, 'index.html'), html);
   fs.copyFileSync(path.join(ROOT, 'sw.js'), path.join(dir, 'sw.js'));
   return new Promise(res => {

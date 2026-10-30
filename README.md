@@ -14,7 +14,7 @@ PWA personal (un solo usuario, en español). Un único `index.html` + `sw.js`; l
    ```
 5. Commit a `main`. (GitHub Pages sirve `index.html`; el service worker pide la red primero, así que siempre ves la última versión.)
 
-Sin esas dos líneas la app funciona **solo en local** y lo avisa con un banner.
+Ya están configuradas con el proyecto de Supabase de M·OS (tabla `mos_kv` creada). Si las dejas vacías, la app funciona **solo en local** y lo avisa con un banner.
 
 ## Cómo se guarda
 
