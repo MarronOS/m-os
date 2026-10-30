@@ -133,22 +133,22 @@ const text = (page, sel) => page.locator(sel).innerText();
   /* ═══ 5. Metas ═══ */
   await nav(page, 'metas'); await settle(page);
   const titles = await page.locator('#metasContent .meta-title').allInnerTexts();
-  ok('5a. Categorías NEGOCIO — Covant / MENTE (CUERPO fuera)', JSON.stringify(titles) === JSON.stringify(['NEGOCIO — Covant', 'MENTE']), JSON.stringify(titles));
-  ok('5b. 4 metas (3 + 1)', (await page.locator('#metasContent .cl').count()) === 4);
+  ok('5a. Categorías NEGOCIO — Covant / CUERPO / MENTE', JSON.stringify(titles) === JSON.stringify(['NEGOCIO — Covant', 'CUERPO', 'MENTE']), JSON.stringify(titles));
+  ok('5b. 10 metas (3 + 6 + 1)', (await page.locator('#metasContent .cl').count()) === 10);
   ok('5c. Fechas: Covant 2026-11-25, contrato 2027-02-28, millón 2027-05-22; cuerpo y mente sin fecha',
-    JSON.stringify(await page.locator('#metasContent input[type=date]').evaluateAll(l => l.map(i => i.value))) === JSON.stringify(['2026-11-25', '2027-02-28', '2027-05-22', '']));
+    JSON.stringify(await page.locator('#metasContent input[type=date]').evaluateAll(l => l.map(i => i.value))) === JSON.stringify(['2026-11-25', '2027-02-28', '2027-05-22', '', '', '', '', '', '', '']));
   await page.locator('#metasContent .meta-main').nth(1).locator('button:has-text("AGREGAR")').click();
   await page.fill('#mf_text', 'Curso de ventas'); await page.fill('#mf_date', '2027-01-15'); await page.click('#modalContent button:has-text("Guardar")'); await settle(page);
   ok('5d. Agregar meta', (await text(page, '#metasContent')).includes('Curso de ventas'));
-  await page.locator('#metasContent .meta-main').nth(1).locator('.ib').first().click();
+  await page.locator('#metasContent .meta-main').nth(2).locator('.ib').first().click();
   await page.fill('#mf_text', 'Buena base de marketing digital'); await page.click('#modalContent button:has-text("Guardar")'); await settle(page);
   ok('5e. Editar meta', (await text(page, '#metasContent')).includes('Buena base de marketing digital'));
   await page.locator('#metasContent .meta-main').nth(1).locator('.ci').first().click(); await settle(page);
-  ok('5f. Marcar meta (checkbox) actualiza progreso por categoría', (await text(page, '#metasContent .meta-main >> nth=1')).includes('1/2'));
+  ok('5f. Marcar meta (checkbox) actualiza progreso por categoría', (await text(page, '#metasContent .meta-main >> nth=1')).includes('1/7'));
   await page.locator('#metasContent .meta-main').nth(1).locator('button.ib.del').last().click(); await settle(page);
   ok('5g. Eliminar meta (se archiva, no se pierde)', !(await text(page, '#metasContent')).includes('Curso de ventas') && JSON.stringify(cloud.val('goals_archive') || '').includes('Curso de ventas'));
   await page.reload(); await pin(page); await nav(page, 'metas'); await settle(page);
-  ok('5h. Tras recargar: editada y marcada persisten, eliminada sigue eliminada', (await text(page, '#metasContent')).includes('marketing digital') && !(await text(page, '#metasContent')).includes('Curso de ventas') && (await text(page, '#metasContent .meta-main >> nth=1')).includes('1/1'));
+  ok('5h. Tras recargar: editada y marcada persisten, eliminada sigue eliminada', (await text(page, '#metasContent')).includes('marketing digital') && !(await text(page, '#metasContent')).includes('Curso de ventas') && (await text(page, '#metasContent .meta-main >> nth=1')).includes('1/6'));
   ok('5i. Metas anteriores no se muestran (clientes, MRR, lectura…)', !/Cerrar 15 clientes|MRR|Inglés|Lectura/i.test(await text(page, '#p-metas')));
 
   /* ═══ 6. Tab $ sincronizada con la meta del millón ═══ */
@@ -172,7 +172,7 @@ const text = (page, sel) => page.locator(sel).innerText();
   ok('7a. Pendientes próximos: Covant terminado / 1 cliente con contrato / 1,000,000 MXN con cuenta regresiva',
     pend.length === 3 && pend[0].includes('Covant terminado') && pend[0].includes('29d') && pend[1].includes('1 cliente con contrato') && pend[1].includes('124d') && pend[2].includes('1,000,000 MXN') && pend[2].includes('207d'), JSON.stringify(pend));
   ok('7b. Pendientes viejos fuera (contrato de socios, trademark, shelby…)', !/notariado|IMPI|Shelby|artes marciales/i.test(await text(page, '#p-dash')));
-  ok('7c. Progreso de metas con las 2 categorías (negocio, mente)', JSON.stringify((await page.locator('#metaGrid .pclbl').allInnerTexts()).map(t => t.toLowerCase())) === JSON.stringify(['negocio', 'mente']));
+  ok('7c. Progreso de metas con las 3 categorías (negocio, cuerpo, mente)', JSON.stringify((await page.locator('#metaGrid .pclbl').allInnerTexts()).map(t => t.toLowerCase())) === JSON.stringify(['negocio', 'cuerpo', 'mente']));
 
   /* ═══ 8. Rutina editable ═══ */
   await nav(page, 'rutina'); await settle(page);
@@ -220,15 +220,15 @@ const text = (page, sel) => page.locator(sel).innerText();
   }
   ok('10a. Ninguna pantalla (ni el menú) menciona afirmaciones, sentadilla ni bench', leaks.length === 0, leaks.join(','));
   await page.evaluate(() => goTo('extra')); await settle(page, 100);
-  ok('10b. Largo plazo conserva solo "Retomar bench" de lo de entrenamiento', /Retomar bench/.test(await text(page, '#p-extra')) && !/sentadilla|pelea|militar|artes marciales/i.test(await text(page, '#p-extra')), await text(page, '#p-extra'));
-  ok('10c. Largo plazo oculto: 5 metas', (await page.locator('#extraContent .cl').count()) === 5);
+  ok('10b. Largo plazo: "Retomar bench" (sin sentadilla) + pelea, militar y artes marciales', /Retomar bench/.test(await text(page, '#p-extra')) && !/sentadilla/i.test(await text(page, '#p-extra')) && /Pelea/.test(await text(page, '#p-extra')) && /militar/.test(await text(page, '#p-extra')) && /Artes marciales/.test(await text(page, '#p-extra')), await text(page, '#p-extra'));
+  ok('10c. Largo plazo oculto: 8 metas', (await page.locator('#extraContent .cl').count()) === 8);
   await nav(page, 'dash'); ok('10d. …y no salen en el dashboard', !/Filantrop|empresario grande|Holding/i.test(await text(page, '#p-dash')));
   let tl = [];
-  for (const p of ['dash', 'hab', 'metas', 'fin', 'nota', 'rutina', 'pend', 'stats', 'sem']) {
+  for (const p of ['dash', 'hab', 'fin', 'nota', 'rutina', 'pend', 'stats', 'sem']) {
     await page.evaluate(p => goTo(p), p); await settle(page, 100);
-    if (/gym|cardio|entrenar|entrenamiento|pierna|brazo|grasa corporal|f[ií]sico/i.test(await text(page, '#p-' + p))) tl.push(p);
+    if (/gym|cardio|entrenar|entrenamiento/i.test(await text(page, '#p-' + p))) tl.push(p);
   }
-  ok('10f. Ninguna pantalla menciona gym, cardio, entrenar, piernas, brazos ni físico', tl.length === 0, tl.join(','));
+  ok('10f. Fuera de Metas, ninguna pantalla menciona gym, cardio ni entrenamiento', tl.length === 0, tl.join(','));
   ok('10e. Sin errores de JS durante toda la sesión', page.errors.length === 0, page.errors.join(' | '));
   await ctx.close();
 
@@ -271,34 +271,49 @@ const text = (page, sel) => page.locator(sel).innerText();
   ok('12g. Al volver la nube se descarga primero y luego se sube lo pendiente', cloud3.val('day:2026-10-27') && cloud3.val('day:2026-10-27').checked.manif === true, JSON.stringify(cloud3.val('day:2026-10-27')));
   await ctx4.close();
 
-  /* ═══ 13. Migración de datos ya guardados (se archiva, no se borra) ═══ */
-  const cloud5 = makeCloud();
+  /* ═══ 13. Metas restauradas y limpieza de entrenamiento en datos ya guardados ═══ */
   const money = { id: 'g_mill', text: '1,000,000 MXN para mí', date: '2027-05-22', done: false, dash: true, dashTitle: '1,000,000 MXN', money: true, amount: 120000, target: 1000000 };
-  cloud5.put('goals', [
-    { id: 'negocio', name: 'NEGOCIO — Covant', short: 'Negocio', color: 'var(--gold)', items: [money] },
-    { id: 'cuerpo', name: 'CUERPO', short: 'Cuerpo', color: 'var(--green)', items: [{ id: 'g_c1', text: '12% de grasa corporal', date: null, done: true }] },
-    { id: 'mente', name: 'MENTE', short: 'Mente', color: 'var(--blue)', items: [{ id: 'g_m1', text: 'Buena base de marketing', date: null, done: false }] }]);
-  cloud5.put('goals_long', [
-    { id: 'l1', text: 'Filantropía — la meta principal de vida', done: false }, { id: 'l2', text: 'Pelea a nivel profesional', done: false },
-    { id: 'l3', text: 'Preparación de nivel militar siendo civil', done: false }, { id: 'l4', text: 'Retomar bench y sentadilla', done: true }, { id: 'l5', text: 'Artes marciales', done: false }]);
-  cloud5.put('routine', [{ id: 'r8', time: '4:30–5:15 pm', title: 'Crear contenido', note: '', tag: '', hl: false }, { id: 'r9', time: '5:30 pm', title: 'Cardio 45 min', note: '', tag: '', hl: false }]);
-  cloud5.put('gym_split', [{ id: 'd1', day: 'Lunes', name: 'Push', exercises: [] }]);
-  cloud5.put('gym:2026-10-20:d1', { date: '2026-10-20', exs: {} });
-  const ctx5 = await newCtx(browser, cloud5);
-  const p5 = await open(ctx5, url);
-  await pin(p5); await settle(p5, 1400);
-  ok('13a. Meta CUERPO quitada de las metas visibles', JSON.stringify(cloud5.val('goals').map(c => c.id)) === JSON.stringify(['negocio', 'mente']));
-  ok('13b. …y archivada con su contenido (no borrada)', JSON.stringify(cloud5.val('goals_archive')).includes('12% de grasa corporal'));
-  ok('13c. El monto acumulado del millón se conserva (120000)', cloud5.val('goals')[0].items[0].amount === 120000);
-  const ll = cloud5.val('goals_long');
-  ok('13d. Largo plazo: quedan Filantropía y "Retomar bench" (con su ✓); pelea, militar y artes marciales archivadas', JSON.stringify(ll.map(x => x.id)) === JSON.stringify(['l1', 'l4']) && ll[1].text === 'Retomar bench' && ll[1].done === true && JSON.stringify(cloud5.val('goals_archive')).includes('Artes marciales'), JSON.stringify(ll));
-  ok('13e. Bloque de cardio fuera de la rutina y archivado', !JSON.stringify(cloud5.val('routine')).includes('Cardio') && JSON.stringify(cloud5.val('routine_archive')).includes('Cardio 45 min'));
-  ok('13f. Datos de gym ya guardados NO se borran de la base', cloud5.rows.has('gym_split') && cloud5.rows.has('gym:2026-10-20:d1'));
-  const archN = cloud5.val('goals_archive').length;
-  await p5.reload(); await pin(p5); await settle(p5, 1000);
-  ok('13g. Idempotente: al recargar no se vuelve a archivar nada', cloud5.val('goals_archive').length === archN && archN === 4, String(cloud5.val('goals_archive').length));
-  ok('13h. Sin errores de JS', p5.errors.length === 0, p5.errors.join(' | '));
-  await ctx5.close();
+  const negocio = { id: 'negocio', name: 'NEGOCIO — Covant', short: 'Negocio', color: 'var(--gold)', items: [money] };
+  const mente = { id: 'mente', name: 'MENTE', short: 'Mente', color: 'var(--blue)', items: [{ id: 'g_m1', text: 'Buena base de marketing', date: null, done: false }] };
+  const cuerpo = { id: 'cuerpo', name: 'CUERPO', short: 'Cuerpo', color: 'var(--green)', items: [{ id: 'g_c1', text: '12% de grasa corporal', date: null, done: true }, { id: 'g_c2', text: 'Brazos de 38 cm', date: null, done: false }] };
+  const L = { l1: { id: 'l1', text: 'Filantropía — la meta principal de vida', done: false }, l2: { id: 'l2', text: 'Pelea a nivel profesional', done: true }, l3: { id: 'l3', text: 'Preparación de nivel militar siendo civil', done: false }, l5: { id: 'l5', text: 'Artes marciales', done: false } };
+  const mkRoutine = cardio => [{ id: 'r8', time: '4:30–5:15 pm', title: 'Crear contenido', note: '', tag: '', hl: false }].concat(cardio ? [{ id: 'r9', time: '5:30 pm', title: 'Cardio 45 min', note: '', tag: '', hl: false }] : []);
+
+  // A) Estado dejado por la versión anterior: CUERPO y 3 metas de largo plazo archivadas por error
+  const cloudA = makeCloud();
+  cloudA.put('goals', [negocio, mente]);
+  cloudA.put('goals_archive', [{ cat: 'cuerpo', category: cuerpo, removed_at: 'x' }, { cat: 'largo_plazo', item: L.l2, removed_at: 'x' }, { cat: 'largo_plazo', item: L.l3, removed_at: 'x' }, { cat: 'largo_plazo', item: L.l5, removed_at: 'x' }]);
+  cloudA.put('goals_long', [L.l1, { id: 'l4', text: 'Retomar bench', done: true }, { id: 'l9', text: 'Meta que agregué yo', done: false }]);
+  cloudA.put('routine', mkRoutine(false));
+  cloudA.put('mig:no_training', { at: 'x' });
+  cloudA.put('gym_split', [{ id: 'd1', day: 'Lunes', name: 'Push', exercises: [] }]);
+  const ctxA = await newCtx(browser, cloudA);
+  const pA = await open(ctxA, url);
+  await pin(pA); await settle(pA, 1400);
+  ok('13a. CUERPO vuelve a las metas, antes de MENTE, con su estado (✓ en grasa corporal)', JSON.stringify(cloudA.val('goals').map(c => c.id)) === JSON.stringify(['negocio', 'cuerpo', 'mente']) && cloudA.val('goals')[1].items[0].done === true && cloudA.val('goals')[1].items.length === 2, JSON.stringify(cloudA.val('goals').map(c => c.id)));
+  const llA = cloudA.val('goals_long');
+  ok('13b. Largo plazo restaurado en orden (l1..l5), conserva "Retomar bench" ✓, la meta que agregaste y el ✓ de pelea', JSON.stringify(llA.map(x => x.id)) === JSON.stringify(['l1', 'l2', 'l3', 'l4', 'l5', 'l9']) && llA[3].text === 'Retomar bench' && llA[3].done === true && llA[1].done === true, JSON.stringify(llA.map(x => x.id)));
+  ok('13c. El monto acumulado del millón sigue en 120000', cloudA.val('goals')[0].items[0].amount === 120000);
+  ok('13d. El cardio sigue fuera de la rutina', !JSON.stringify(cloudA.val('routine')).includes('Cardio'));
+  await pA.reload(); await pin(pA); await settle(pA, 1000);
+  ok('13e. Idempotente: al recargar no se duplica nada', cloudA.val('goals').length === 3 && cloudA.val('goals_long').length === 6);
+  ok('13f. Sin errores de JS (A)', pA.errors.length === 0, pA.errors.join(' | '));
+  await ctxA.close();
+
+  // B) Estado de la versión original (nunca corrió la limpieza): las metas no se tocan, sale el cardio, "bench y sentadilla" → "bench"
+  const cloudB = makeCloud();
+  cloudB.put('goals', [negocio, cuerpo, mente]);
+  cloudB.put('goals_long', [L.l1, L.l2, L.l3, { id: 'l4', text: 'Retomar bench y sentadilla', done: true }, L.l5]);
+  cloudB.put('routine', mkRoutine(true));
+  cloudB.put('gym:2026-10-20:d1', { date: '2026-10-20', exs: {} });
+  const ctxB = await newCtx(browser, cloudB);
+  const pB = await open(ctxB, url);
+  await pin(pB); await settle(pB, 1400);
+  ok('13g. Original: las metas de CUERPO y largo plazo no se tocan', cloudB.val('goals').length === 3 && cloudB.val('goals_long').length === 5 && !cloudB.rows.has('goals_archive'));
+  ok('13h. "Retomar bench y sentadilla" → "Retomar bench" (conserva ✓)', cloudB.val('goals_long')[3].text === 'Retomar bench' && cloudB.val('goals_long')[3].done === true);
+  ok('13i. Cardio sale de la rutina y queda archivado; datos de gym viejos se conservan', !JSON.stringify(cloudB.val('routine')).includes('Cardio') && JSON.stringify(cloudB.val('routine_archive')).includes('Cardio 45 min') && cloudB.rows.has('gym:2026-10-20:d1'));
+  ok('13j. Sin errores de JS (B)', pB.errors.length === 0, pB.errors.join(' | '));
+  await ctxB.close();
 
   await browser.close(); srv.close();
   const failed = results.filter(r => !r.pass);

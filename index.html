@@ -252,7 +252,7 @@ textarea.inp{resize:none;line-height:1.6}
   <div class="sl">Pendientes próximos</div>
   <div id="pendingBox"></div>
   <div class="sl">Progreso de metas</div>
-  <div class="pgrid" style="grid-template-columns:repeat(2,1fr)" id="metaGrid"></div>
+  <div class="pgrid" id="metaGrid"></div>
   <div class="card" id="dashSummary"></div>
 </div>
 
@@ -525,28 +525,42 @@ function seedDefaults(){ // solo después de una descarga exitosa: lo que falta 
   need('nota',()=>clone(NOTA_DEFAULT));
   need('identity',()=>clone(ID_DEFAULT));
   migrateNoTraining();
+  migrateRestoreGoals();
 }
-function migrateNoTraining(){ // 2026-10-30: se quita todo lo de entrenamiento. Se archiva, no se borra.
+function migrateNoTraining(){ // 30 oct 2026: fuera el cardio de la rutina; en largo plazo queda "Retomar bench" (sin sentadilla). Las METAS no se tocan.
   if('mig:no_training' in Store.data)return;
   const now=new Date().toISOString();
-  const arch=(k,x)=>kvUpdate(k,[],a=>{a.push(Object.assign({removed_at:now},x))});
+  const rt=kvGet('routine',null),isCardio=b=>b.id==='r9'&&/cardio/i.test(b.title);
+  if(rt&&rt.some(isCardio)){
+    kvUpdate('routine_archive',[],a=>{a.push({removed_at:now,block:rt.find(isCardio)})});
+    kvSet('routine',rt.filter(b=>!isCardio(b)));
+  }
+  const lg=kvGet('goals_long',null);
+  if(lg&&lg.some(x=>x.id==='l4'&&x.text==='Retomar bench y sentadilla'))
+    kvSet('goals_long',lg.map(x=>x.id==='l4'&&x.text==='Retomar bench y sentadilla'?Object.assign({},x,{text:'Retomar bench'}):x));
+  kvSet('mig:no_training',{at:now});
+}
+function migrateRestoreGoals(){ // una versión anterior archivó por error las metas de CUERPO y 3 de largo plazo: se devuelven (con su estado)
+  if('mig:goals_restored' in Store.data)return;
+  const now=new Date().toISOString(),arc=kvGet('goals_archive',[]);
   const gs=kvGet('goals',null);
-  if(gs&&gs.some(c=>c.id==='cuerpo')){
-    arch('goals_archive',{cat:'cuerpo',category:gs.find(c=>c.id==='cuerpo')});
-    kvSet('goals',gs.filter(c=>c.id!=='cuerpo'));
+  if(gs&&!gs.some(c=>c.id==='cuerpo')){
+    const a=arc.find(z=>z.cat==='cuerpo'&&z.category),cat=clone(a?a.category:GOALS_DEFAULT.find(c=>c.id==='cuerpo'));
+    const i=gs.findIndex(c=>c.id==='mente');gs.splice(i<0?gs.length:i,0,cat);
+    kvSet('goals',gs);
   }
   const lg=kvGet('goals_long',null);
   if(lg){
-    const drop=['l2','l3','l5'];
-    lg.filter(x=>drop.indexOf(x.id)>=0).forEach(x=>arch('goals_archive',{cat:'largo_plazo',item:x}));
-    kvSet('goals_long',lg.filter(x=>drop.indexOf(x.id)<0).map(x=>x.id==='l4'&&x.text==='Retomar bench y sentadilla'?Object.assign({},x,{text:'Retomar bench'}):x));
+    const out=[];
+    LONG_DEFAULT.forEach(d=>{
+      const cur=lg.find(x=>x.id===d.id);if(cur){out.push(cur);return}
+      if(['l2','l3','l5'].indexOf(d.id)<0)return; // solo las 3 que se archivaron por error; lo que borraste tú no vuelve
+      const a=arc.find(z=>z.cat==='largo_plazo'&&z.item&&z.item.id===d.id);out.push(clone(a?a.item:d));
+    });
+    lg.forEach(x=>{if(!out.some(o=>o.id===x.id))out.push(x)}); // lo que agregaste tú
+    if(JSON.stringify(out)!==JSON.stringify(lg))kvSet('goals_long',out);
   }
-  const rt=kvGet('routine',null),isCardio=b=>b.id==='r9'&&/cardio/i.test(b.title);
-  if(rt&&rt.some(isCardio)){
-    arch('routine_archive',{block:rt.find(isCardio)});
-    kvSet('routine',rt.filter(b=>!isCardio(b)));
-  }
-  kvSet('mig:no_training',{at:now});
+  kvSet('mig:goals_restored',{at:now});
 }
 function legacyImport(){ // días guardados por la versión anterior en este mismo navegador → se archivan en la BD nueva
   if(Store.data['legacy_imported'])return;
@@ -879,12 +893,22 @@ const GOALS_DEFAULT=[
     {id:'g_prod',text:'Producto terminado',date:'2026-11-25',done:false,dash:true,dashTitle:'Covant terminado'},
     {id:'g_cli',text:'1 cliente con contrato',date:'2027-02-28',done:false,dash:true,dashTitle:'1 cliente con contrato'},
     {id:'g_mill',text:'1,000,000 MXN para mí',date:'2027-05-22',done:false,dash:true,dashTitle:'1,000,000 MXN',money:true,amount:0,target:1000000}]},
+  {id:'cuerpo',name:'CUERPO',short:'Cuerpo',color:'var(--green)',items:[
+    {id:'g_c1',text:'12% de grasa corporal',date:null,done:false},
+    {id:'g_c2',text:'Brazos de 38 cm',date:null,done:false},
+    {id:'g_c3',text:'Entrenar piernas intenso',date:null,done:false},
+    {id:'g_c4',text:'Sacro fortalecido',date:null,done:false},
+    {id:'g_c5',text:'Piernas fuertes',date:null,done:false},
+    {id:'g_c6',text:'Mejor físico',date:null,done:false}]},
   {id:'mente',name:'MENTE',short:'Mente',color:'var(--blue)',items:[
     {id:'g_m1',text:'Buena base de marketing',date:null,done:false}]}
 ];
 const LONG_DEFAULT=[
   {id:'l1',text:'Filantropía — la meta principal de vida',done:false},
+  {id:'l2',text:'Pelea a nivel profesional',done:false},
+  {id:'l3',text:'Preparación de nivel militar siendo civil',done:false},
   {id:'l4',text:'Retomar bench',done:false},
+  {id:'l5',text:'Artes marciales',done:false},
   {id:'l6',text:'Holding multisectorial',done:false},
   {id:'l7',text:'Ser un empresario grande',done:false},
   {id:'l8',text:'Mentores y carácter',done:false}
