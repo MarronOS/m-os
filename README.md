@@ -21,12 +21,13 @@ Sin esas dos líneas la app funciona **solo en local** y lo avisa con un banner.
 - Cada cambio se escribe al instante en el dispositivo y se envía a Supabase (tabla `mos_kv`: `key`, `value jsonb`, `updated_at`).
 - Al abrir: **primero descarga, después renderiza**. Nada se sube hasta que la descarga inicial terminó bien; si la nube no responde y no hay datos locales, se muestra un error con *Reintentar* en vez de una app vacía.
 - Sin conexión: los cambios quedan en cola y se suben al reconectar (se descarga primero, gana el cambio más reciente por clave).
-- Nada se borra: lo que eliminas (metas, bloques, días del split) se archiva en `goals_archive`, `routine_archive`, `gym_split_archive`.
+- Nada se borra: lo que eliminas (metas, bloques de la rutina) se archiva en `goals_archive` y `routine_archive`.
+- Entrenamiento (30 oct 2026): se quitó de la app. Lo que ya tuvieras guardado (`gym:*`, `gym_split`) sigue en la base, solo no se muestra.
 - Respaldo manual: Nota → **⬇ Backup** (JSON + CSV de hábitos).
 
 ## Claves de la tabla
 
-`day:AAAA-MM-DD` (hábitos del día, con los nombres vigentes ese día) · `gym:AAAA-MM-DD:<día>` (series) · `gym_split` · `goals` · `goals_long` · `routine` · `nota` · `identity` · `pendientes` · `sem:<lunes>` · `fin_notes`.
+`day:AAAA-MM-DD` (hábitos del día, con los nombres vigentes ese día) · `goals` · `goals_long` · `routine` · `nota` · `identity` · `pendientes` · `sem:<lunes>` · `fin_notes`.
 
 ## Seguridad (léelo)
 
