@@ -100,19 +100,19 @@ const text = (page, sel) => page.locator(sel).innerText();
   /* ═══ 2. Hábitos: lista nueva, marcar, recargar ═══ */
   await nav(page, 'hab'); await settle(page);
   const habTexts = await page.locator('#habLists .cl').allInnerTexts();
-  ok('2a. Son 13 hábitos (sin desayuno ni estudiar 30; con Entrenar)', habTexts.length === 13, String(habTexts.length));
+  ok('2a. Son 14 hábitos (sin desayuno ni estudiar 30; con Entrenar)', habTexts.length === 14, String(habTexts.length));
   ok('2b. Agrupados MAÑANA / DÍA / NOCHE', JSON.stringify(await page.locator('#habLists .hgroup').allInnerTexts()) === JSON.stringify(['MAÑANA', 'DÍA', 'NOCHE']));
-  ok('2c. "Manifestación y visualización" lleva la etiqueta NO NEGOCIABLE', (await page.locator('#habLists .ci.nn .nnb').innerText()).includes('NO NEGOCIABLE'));
+  ok('2c. "Manifestación y visualización" lleva la etiqueta NO NEGOCIABLE', (await page.locator('#habLists .ci.nn .nnb').first().innerText()).includes('NO NEGOCIABLE'));
   ok('2d. No hay separación prioridad/general', !/Prioridad|Generales/i.test(await text(page, '#p-hab')));
   const rows = page.locator('#habLists .ci');
-  await rows.nth(0).click(); await rows.nth(2).click(); await rows.nth(7).click();   // despertar, covant, agua
+  await rows.nth(0).click(); await rows.nth(3).click(); await rows.nth(8).click();   // despertar, covant, agua
   await settle(page, 500);
-  ok('2e. Estatus del día: 3/13 = 23%', (await text(page, '#dayStatus')).includes('3/13') && (await text(page, '#dayStatus')).includes('23%'), await text(page, '#dayStatus'));
+  ok('2e. Estatus del día: 3/14 = 21%', (await text(page, '#dayStatus')).includes('3/14') && (await text(page, '#dayStatus')).includes('21%'), await text(page, '#dayStatus'));
   ok('2f. Estatus del día muestra la fecha local de hoy (2026-10-27)', (await text(page, '#dayStatus')).includes('2026-10-27'));
   ok('2g. Estatus del día muestra hora de guardado', /guardado \d\d:\d\d/.test(await text(page, '#dayStatus')));
   ok('2h. Sin lo no negociable a las 2 pm: aviso dorado, NO rojo', (await text(page, '#dayStatus')).includes('NO NEGOCIABLE pendiente') && !(await text(page, '#dayStatus')).includes('FALTA LO NO NEGOCIABLE'));
   const dayRec = cloud.val('day:2026-10-27');
-  ok('2i. Se guardó en la nube al instante, con id estable y nombres vigentes ese día', dayRec && dayRec.checked.wake && dayRec.checked.covant && dayRec.checked.water && dayRec.habits.length === 13 && dayRec.habits[1].name === 'Manifestación y visualización', JSON.stringify(dayRec && dayRec.checked));
+  ok('2i. Se guardó en la nube al instante, con id estable y nombres vigentes ese día', dayRec && dayRec.checked.wake && dayRec.checked.covant && dayRec.checked.water && dayRec.habits.length === 14 && dayRec.habits[1].name === 'Manifestación y visualización', JSON.stringify(dayRec && dayRec.checked));
   await page.reload(); await pin(page); await nav(page, 'hab'); await settle(page);
   ok('2j. Tras RECARGAR persisten las 3 marcas', (await page.locator('#habLists .ci.done').count()) === 3);
 
@@ -238,14 +238,14 @@ const text = (page, sel) => page.locator(sel).innerText();
   const p3 = await open(ctx3, url, new Date('2026-10-28T02:00:00Z')); // lunes→martes: 8:00 pm del 27 en México (ya es 28 en UTC)
   await pin(p3); await nav(p3, 'hab'); await settle(p3);
   ok('11a. 8 pm en México sigue siendo el día 27 (antes la app saltaba al 28 desde las 6 pm)', (await text(p3, '#dayStatus')).includes('2026-10-27'), await text(p3, '#dayStatus'));
-  await p3.locator('#habLists .ci').nth(2).click(); await settle(p3, 400);
+  await p3.locator('#habLists .ci').nth(3).click(); await settle(p3, 400);
   ok('11b. A las 8 pm sin lo no negociable aún no es rojo (la regla roja es desde las 9 pm)', !(await text(p3, '#dayStatus')).includes('FALTA LO NO NEGOCIABLE'));
   await p3.clock.fastForward('01:05:00'); await settle(p3, 300);  // 9:05 pm
   await p3.evaluate(() => refreshStatusOnly());
   ok('11c. Pasadas las 9 pm sin lo no negociable → estatus en ROJO', (await text(p3, '#dayStatus')).includes('FALTA LO NO NEGOCIABLE'), await text(p3, '#dayStatus'));
   await p3.clock.fastForward('03:00:00'); await settle(p3, 600);  // 12:05 am del 28
   await p3.evaluate(() => { if (today() !== CUR_DAY) return rollDay(); }); await settle(p3, 500);
-  ok('11d. Medianoche: el día nuevo arranca en 0/13', (await text(p3, '#dayStatus')).includes('2026-10-28') && (await text(p3, '#dayStatus')).includes('0/13'), await text(p3, '#dayStatus'));
+  ok('11d. Medianoche: el día nuevo arranca en 0/13', (await text(p3, '#dayStatus')).includes('2026-10-28') && (await text(p3, '#dayStatus')).includes('0/14'), await text(p3, '#dayStatus'));
   const prev = cloud2.val('day:2026-10-27');
   ok('11e. …y el día anterior quedó guardado en la nube con su marca', prev && prev.checked.covant === true, JSON.stringify(prev && prev.checked));
   await ctx3.close();

@@ -231,7 +231,7 @@ textarea.inp{resize:none;line-height:1.6}
     </div>
     <div style="flex:1">
       <div style="font-size:12px;font-weight:700;margin-bottom:3px">Hábitos de hoy</div>
-      <div style="font-size:10px;color:var(--mu)" id="habCount">0/13</div>
+      <div style="font-size:10px;color:var(--mu)" id="habCount">0/14</div>
       <div style="margin-top:6px;font-size:9px;color:var(--mu)">Racha · lo no negociable</div>
       <div style="font-size:13px;font-weight:800;color:var(--gold)" id="streakNum">0 días</div>
     </div>
@@ -718,6 +718,7 @@ function setupApp(){
 const HABITS=[
   {id:'wake',   g:'MAÑANA',n:'Despertar a la misma hora'},
   {id:'manif',  g:'MAÑANA',n:'Manifestación y visualización',nn:true},
+  {id:'meta1m', g:'MAÑANA',n:'Escribir meta diario: 1M antes de los 18',nn:true},
   {id:'covant', g:'DÍA',   n:'Bloque largo de trabajo en Covant (tarea única definida la noche anterior)'},
   {id:'mkt',    g:'DÍA',   n:'Estudiar'},
   {id:'train',  g:'DÍA',   n:'Entrenar'},
@@ -731,7 +732,7 @@ const HABITS=[
   {id:'sleep8', g:'NOCHE', n:'Dormir 8 horas'}
 ];
 const GROUPS=['MAÑANA','DÍA','NOCHE'];
-const NN_HABIT=HABITS.find(h=>h.nn);
+const NN_HABITS=HABITS.filter(h=>h.nn);
 const NN_RED_HOUR=21; // hoy se marca en rojo si pasan las 9 pm sin lo no negociable (días pasados: siempre)
 /* Lista anterior — solo para mostrar días guardados antes de este cambio */
 const LEGACY_HAB={
@@ -747,7 +748,7 @@ function saveDay(d,checked,extra){
   const rec={v:2,date:d,
     habits:HABITS.map(h=>({id:h.id,name:h.n,group:h.g,nn:!!h.nn})), // nombres vigentes ESE día
     checked:checked,done:done,total:HABITS.length,pct:Math.round(done/HABITS.length*100),
-    nn_done:!!checked[NN_HABIT.id],saved_at:new Date().toISOString()};
+    nn_done:HABITS.filter(h=>h.nn).every(h=>!!checked[h.id]),saved_at:new Date().toISOString()};
   if(prev&&!prev.v)rec.legacy_prev=prev.legacy_prev||prev; // nunca se destruye un día guardado con la lista anterior
   else if(prev&&prev.legacy_prev)rec.legacy_prev=prev.legacy_prev;
   if(extra)Object.assign(rec,extra);
@@ -765,8 +766,8 @@ function resetHabits(){
   renderAll();
 }
 function mkView(list,saved,legacy,r){
-  const done=list.filter(x=>x.done).length,total=list.length,nn=list.find(x=>x.nn);
-  const v={list:list,done:done,total:total,pct:total?Math.round(done/total*100):0,hasNN:!!nn,nnDone:!!(nn&&nn.done),saved_at:saved,legacy:!!legacy};
+  const done=list.filter(x=>x.done).length,total=list.length,nns=list.filter(x=>x.nn),nn=nns.length;
+  const v={list:list,done:done,total:total,pct:total?Math.round(done/total*100):0,hasNN:!!nn,nnDone:!!(nn&&nns.every(x=>x.done)),saved_at:saved,legacy:!!legacy};
   if(legacy&&r){v.pct=r.pct!=null?r.pct:v.pct;v.sub='Prioridad '+(r.pri_done||0)+'/'+(r.pri_total||LEGACY_HAB.priority.length)+' · Generales '+(r.gen_done||0)+'/'+(r.gen_total||LEGACY_HAB.general.length)+' · lista anterior'}
   return v;
 }
@@ -874,7 +875,7 @@ function renderAlerts(){
   const box=$('alertBox');if(!box)return;
   const m=missingHabits(),c=checkedToday();
   if(!m.length)box.innerHTML='<div class="al ao"><span class="ai">✓</span><div class="at">Los '+HABITS.length+' hábitos de hoy están completos.</div></div>';
-  else if(!c[NN_HABIT.id])box.innerHTML='<div class="al aw"><span class="ai">⚡</span><div class="at"><strong>NO NEGOCIABLE pendiente:</strong> '+esc(NN_HABIT.n)+'.</div></div>';
+  else if(NN_HABITS.some(h=>!c[h.id]))box.innerHTML='<div class="al aw"><span class="ai">⚡</span><div class="at"><strong>NO NEGOCIABLE pendiente:</strong> '+NN_HABITS.filter(h=>!c[h.id]).map(h=>esc(h.n)).join(' · ')+'.</div></div>';
   else if(m.length<=3)box.innerHTML='<div class="al aw"><span class="ai">⚡</span><div class="at"><strong>Foco ahora:</strong> '+m.map(x=>esc(x.n)).join(' · ')+'</div></div>';
   else box.innerHTML='<div class="al aw"><span class="ai">⚡</span><div class="at">'+m.length+' hábitos pendientes hoy.</div></div>';
 }
@@ -882,7 +883,7 @@ function buildReminderCard(){
   const h=new Date().getHours(),c=checkedToday(),cards=[],s=calcStreak();
   if(h<7){if(!c.manif)cards.push({cls:'ag',icon:'⭐',text:'Agua, y a tu bloque <strong>NO NEGOCIABLE</strong>: manifestación y visualización, 20 min, sin teléfono.'})}
   else if(h<12){
-    if(!c.manif)cards.push({cls:'aw',icon:'⚡',text:'<strong>Manifestación y visualización</strong> sin marcar. Es lo no negociable.'});
+    if(!c.manif||!c.meta1m)cards.push({cls:'aw',icon:'⚡',text:'Falta lo no negociable: <strong>'+[!c.manif&&'manifestación y visualización',!c.meta1m&&'escribir tu meta diaria (1M antes de los 18)'].filter(Boolean).join(' y ')+'</strong>.'});
   }else if(h<17){
     if(!c.covant)cards.push({cls:'aw',icon:'🔥',text:'<strong>Covant</strong>: tu bloque largo sigue pendiente.'});
     else cards.push({cls:'ao',icon:'✓',text:'Bloque de Covant hecho. Sigue con contenido y marketing.'});
@@ -1246,7 +1247,7 @@ function notify(title,body){
 }
 function slotMsg(h){
   const m=missingHabits(),c=checkedToday();
-  if(h===6)return c.manif?'Ya marcaste lo no negociable. Sigue.':'Es hora de tu bloque NO NEGOCIABLE: manifestación y visualización, 20 min, sin teléfono.';
+  if(h===6)return (c.manif&&c.meta1m)?'Ya marcaste lo no negociable. Sigue.':'Es hora de tu bloque NO NEGOCIABLE: manifestación y visualización, 20 min, sin teléfono.';
   if(h===12)return m.length?'Pendientes: '+m.slice(0,3).map(x=>x.n).join(', ')+'.':'Mañana perfecta. Sigue.';
   return !c.plan?'Planea mañana y define la tarea única de Covant. Luego orar y teléfono fuera.':(m.length?m.length+' hábitos sin marcar. Cierra bien el día.':'Día completo. A dormir antes de las 10:40.');
 }
