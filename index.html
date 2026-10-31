@@ -231,7 +231,7 @@ textarea.inp{resize:none;line-height:1.6}
     </div>
     <div style="flex:1">
       <div style="font-size:12px;font-weight:700;margin-bottom:3px">Hábitos de hoy</div>
-      <div style="font-size:10px;color:var(--mu)" id="habCount">0/14</div>
+      <div style="font-size:10px;color:var(--mu)" id="habCount">0/13</div>
       <div style="margin-top:6px;font-size:9px;color:var(--mu)">Racha · lo no negociable</div>
       <div style="font-size:13px;font-weight:800;color:var(--gold)" id="streakNum">0 días</div>
     </div>
@@ -526,6 +526,7 @@ function seedDefaults(){ // solo después de una descarga exitosa: lo que falta 
   need('identity',()=>clone(ID_DEFAULT));
   migrateNoTraining();
   migrateRestoreGoals();
+  migrateAddBooks();
 }
 function migrateNoTraining(){ // 30 oct 2026: fuera el cardio de la rutina; en largo plazo queda "Retomar bench" (sin sentadilla). Las METAS no se tocan.
   if('mig:no_training' in Store.data)return;
@@ -561,6 +562,15 @@ function migrateRestoreGoals(){ // una versión anterior archivó por error las 
     if(JSON.stringify(out)!==JSON.stringify(lg))kvSet('goals_long',out);
   }
   kvSet('mig:goals_restored',{at:now});
+}
+function migrateAddBooks(){ // 30 oct 2026: nueva meta "Leer 3 libros" en MENTE (una sola vez; si luego la borras no vuelve)
+  if('mig:goal_3books' in Store.data)return;
+  const gs=kvGet('goals',null);
+  if(gs){
+    const m=gs.find(c=>c.id==='mente');
+    if(m&&!m.items.some(x=>x.id==='g_m2'||/leer 3 libros/i.test(x.text))){m.items.push({id:'g_m2',text:'Leer 3 libros',date:null,done:false});kvSet('goals',gs)}
+  }
+  kvSet('mig:goal_3books',{at:new Date().toISOString()});
 }
 function legacyImport(){ // días guardados por la versión anterior en este mismo navegador → se archivan en la BD nueva
   if(Store.data['legacy_imported'])return;
@@ -708,10 +718,9 @@ function setupApp(){
 const HABITS=[
   {id:'wake',   g:'MAÑANA',n:'Despertar a la misma hora'},
   {id:'manif',  g:'MAÑANA',n:'Manifestación y visualización',nn:true},
-  {id:'study30',g:'MAÑANA',n:'Estudiar 30 min'},
-  {id:'brk',    g:'MAÑANA',n:'Desayuno limpio'},
   {id:'covant', g:'DÍA',   n:'Bloque largo de trabajo en Covant (tarea única definida la noche anterior)'},
-  {id:'mkt',    g:'DÍA',   n:'Estudiar marketing en paralelo'},
+  {id:'mkt',    g:'DÍA',   n:'Estudiar'},
+  {id:'train',  g:'DÍA',   n:'Entrenar'},
   {id:'content',g:'DÍA',   n:'Crear contenido'},
   {id:'diet',   g:'DÍA',   n:'Dieta: cumplir mínimo el 70%'},
   {id:'water',  g:'DÍA',   n:'3-4 L de agua'},
@@ -901,7 +910,8 @@ const GOALS_DEFAULT=[
     {id:'g_c5',text:'Piernas fuertes',date:null,done:false},
     {id:'g_c6',text:'Mejor físico',date:null,done:false}]},
   {id:'mente',name:'MENTE',short:'Mente',color:'var(--blue)',items:[
-    {id:'g_m1',text:'Buena base de marketing',date:null,done:false}]}
+    {id:'g_m1',text:'Buena base de marketing',date:null,done:false},
+    {id:'g_m2',text:'Leer 3 libros',date:null,done:false}]}
 ];
 const LONG_DEFAULT=[
   {id:'l1',text:'Filantropía — la meta principal de vida',done:false},

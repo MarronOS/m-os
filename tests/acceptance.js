@@ -100,19 +100,19 @@ const text = (page, sel) => page.locator(sel).innerText();
   /* ═══ 2. Hábitos: lista nueva, marcar, recargar ═══ */
   await nav(page, 'hab'); await settle(page);
   const habTexts = await page.locator('#habLists .cl').allInnerTexts();
-  ok('2a. Son 14 hábitos (sin cardio)', habTexts.length === 14, String(habTexts.length));
+  ok('2a. Son 13 hábitos (sin desayuno ni estudiar 30; con Entrenar)', habTexts.length === 13, String(habTexts.length));
   ok('2b. Agrupados MAÑANA / DÍA / NOCHE', JSON.stringify(await page.locator('#habLists .hgroup').allInnerTexts()) === JSON.stringify(['MAÑANA', 'DÍA', 'NOCHE']));
   ok('2c. "Manifestación y visualización" lleva la etiqueta NO NEGOCIABLE', (await page.locator('#habLists .ci.nn .nnb').innerText()).includes('NO NEGOCIABLE'));
   ok('2d. No hay separación prioridad/general', !/Prioridad|Generales/i.test(await text(page, '#p-hab')));
   const rows = page.locator('#habLists .ci');
-  await rows.nth(0).click(); await rows.nth(2).click(); await rows.nth(8).click();   // despertar, estudiar 30, agua
+  await rows.nth(0).click(); await rows.nth(2).click(); await rows.nth(7).click();   // despertar, covant, agua
   await settle(page, 500);
-  ok('2e. Estatus del día: 3/14 = 21%', (await text(page, '#dayStatus')).includes('3/14') && (await text(page, '#dayStatus')).includes('21%'), await text(page, '#dayStatus'));
+  ok('2e. Estatus del día: 3/13 = 23%', (await text(page, '#dayStatus')).includes('3/13') && (await text(page, '#dayStatus')).includes('23%'), await text(page, '#dayStatus'));
   ok('2f. Estatus del día muestra la fecha local de hoy (2026-10-27)', (await text(page, '#dayStatus')).includes('2026-10-27'));
   ok('2g. Estatus del día muestra hora de guardado', /guardado \d\d:\d\d/.test(await text(page, '#dayStatus')));
   ok('2h. Sin lo no negociable a las 2 pm: aviso dorado, NO rojo', (await text(page, '#dayStatus')).includes('NO NEGOCIABLE pendiente') && !(await text(page, '#dayStatus')).includes('FALTA LO NO NEGOCIABLE'));
   const dayRec = cloud.val('day:2026-10-27');
-  ok('2i. Se guardó en la nube al instante, con id estable y nombres vigentes ese día', dayRec && dayRec.checked.wake && dayRec.checked.study30 && dayRec.checked.water && dayRec.habits.length === 14 && dayRec.habits[1].name === 'Manifestación y visualización', JSON.stringify(dayRec && dayRec.checked));
+  ok('2i. Se guardó en la nube al instante, con id estable y nombres vigentes ese día', dayRec && dayRec.checked.wake && dayRec.checked.covant && dayRec.checked.water && dayRec.habits.length === 13 && dayRec.habits[1].name === 'Manifestación y visualización', JSON.stringify(dayRec && dayRec.checked));
   await page.reload(); await pin(page); await nav(page, 'hab'); await settle(page);
   ok('2j. Tras RECARGAR persisten las 3 marcas', (await page.locator('#habLists .ci.done').count()) === 3);
 
@@ -134,9 +134,9 @@ const text = (page, sel) => page.locator(sel).innerText();
   await nav(page, 'metas'); await settle(page);
   const titles = await page.locator('#metasContent .meta-title').allInnerTexts();
   ok('5a. Categorías NEGOCIO — Covant / CUERPO / MENTE', JSON.stringify(titles) === JSON.stringify(['NEGOCIO — Covant', 'CUERPO', 'MENTE']), JSON.stringify(titles));
-  ok('5b. 10 metas (3 + 6 + 1)', (await page.locator('#metasContent .cl').count()) === 10);
+  ok('5b. 11 metas (3 + 6 + 2)', (await page.locator('#metasContent .cl').count()) === 11);
   ok('5c. Fechas: Covant 2026-11-25, contrato 2027-02-28, millón 2027-05-22; cuerpo y mente sin fecha',
-    JSON.stringify(await page.locator('#metasContent input[type=date]').evaluateAll(l => l.map(i => i.value))) === JSON.stringify(['2026-11-25', '2027-02-28', '2027-05-22', '', '', '', '', '', '', '']));
+    JSON.stringify(await page.locator('#metasContent input[type=date]').evaluateAll(l => l.map(i => i.value))) === JSON.stringify(['2026-11-25', '2027-02-28', '2027-05-22', '', '', '', '', '', '', '', '']));
   await page.locator('#metasContent .meta-main').nth(1).locator('button:has-text("AGREGAR")').click();
   await page.fill('#mf_text', 'Curso de ventas'); await page.fill('#mf_date', '2027-01-15'); await page.click('#modalContent button:has-text("Guardar")'); await settle(page);
   ok('5d. Agregar meta', (await text(page, '#metasContent')).includes('Curso de ventas'));
@@ -224,7 +224,7 @@ const text = (page, sel) => page.locator(sel).innerText();
   ok('10c. Largo plazo oculto: 8 metas', (await page.locator('#extraContent .cl').count()) === 8);
   await nav(page, 'dash'); ok('10d. …y no salen en el dashboard', !/Filantrop|empresario grande|Holding/i.test(await text(page, '#p-dash')));
   let tl = [];
-  for (const p of ['dash', 'hab', 'fin', 'nota', 'rutina', 'pend', 'stats', 'sem']) {
+  for (const p of ['dash', 'fin', 'nota', 'rutina', 'pend', 'stats', 'sem']) {
     await page.evaluate(p => goTo(p), p); await settle(page, 100);
     if (/gym|cardio|entrenar|entrenamiento/i.test(await text(page, '#p-' + p))) tl.push(p);
   }
@@ -238,14 +238,14 @@ const text = (page, sel) => page.locator(sel).innerText();
   const p3 = await open(ctx3, url, new Date('2026-10-28T02:00:00Z')); // lunes→martes: 8:00 pm del 27 en México (ya es 28 en UTC)
   await pin(p3); await nav(p3, 'hab'); await settle(p3);
   ok('11a. 8 pm en México sigue siendo el día 27 (antes la app saltaba al 28 desde las 6 pm)', (await text(p3, '#dayStatus')).includes('2026-10-27'), await text(p3, '#dayStatus'));
-  await p3.locator('#habLists .ci').nth(4).click(); await settle(p3, 400);
+  await p3.locator('#habLists .ci').nth(2).click(); await settle(p3, 400);
   ok('11b. A las 8 pm sin lo no negociable aún no es rojo (la regla roja es desde las 9 pm)', !(await text(p3, '#dayStatus')).includes('FALTA LO NO NEGOCIABLE'));
   await p3.clock.fastForward('01:05:00'); await settle(p3, 300);  // 9:05 pm
   await p3.evaluate(() => refreshStatusOnly());
   ok('11c. Pasadas las 9 pm sin lo no negociable → estatus en ROJO', (await text(p3, '#dayStatus')).includes('FALTA LO NO NEGOCIABLE'), await text(p3, '#dayStatus'));
   await p3.clock.fastForward('03:00:00'); await settle(p3, 600);  // 12:05 am del 28
   await p3.evaluate(() => { if (today() !== CUR_DAY) return rollDay(); }); await settle(p3, 500);
-  ok('11d. Medianoche: el día nuevo arranca en 0/15', (await text(p3, '#dayStatus')).includes('2026-10-28') && (await text(p3, '#dayStatus')).includes('0/14'), await text(p3, '#dayStatus'));
+  ok('11d. Medianoche: el día nuevo arranca en 0/13', (await text(p3, '#dayStatus')).includes('2026-10-28') && (await text(p3, '#dayStatus')).includes('0/13'), await text(p3, '#dayStatus'));
   const prev = cloud2.val('day:2026-10-27');
   ok('11e. …y el día anterior quedó guardado en la nube con su marca', prev && prev.checked.covant === true, JSON.stringify(prev && prev.checked));
   await ctx3.close();
@@ -294,6 +294,7 @@ const text = (page, sel) => page.locator(sel).innerText();
   const llA = cloudA.val('goals_long');
   ok('13b. Largo plazo restaurado en orden (l1..l5), conserva "Retomar bench" ✓, la meta que agregaste y el ✓ de pelea', JSON.stringify(llA.map(x => x.id)) === JSON.stringify(['l1', 'l2', 'l3', 'l4', 'l5', 'l9']) && llA[3].text === 'Retomar bench' && llA[3].done === true && llA[1].done === true, JSON.stringify(llA.map(x => x.id)));
   ok('13c. El monto acumulado del millón sigue en 120000', cloudA.val('goals')[0].items[0].amount === 120000);
+  ok('13d2. Nueva meta "Leer 3 libros" agregada una sola vez a MENTE', cloudA.val('goals')[2].items.filter(x => x.text === 'Leer 3 libros').length === 1 && !!cloudA.rows.has('mig:goal_3books'));
   ok('13d. El cardio sigue fuera de la rutina', !JSON.stringify(cloudA.val('routine')).includes('Cardio'));
   await pA.reload(); await pin(pA); await settle(pA, 1000);
   ok('13e. Idempotente: al recargar no se duplica nada', cloudA.val('goals').length === 3 && cloudA.val('goals_long').length === 6);
